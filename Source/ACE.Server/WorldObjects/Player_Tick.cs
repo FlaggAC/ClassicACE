@@ -549,7 +549,7 @@ namespace ACE.Server.WorldObjects
                             PhysicsObj.set_request_pos(newPosition.Pos, newPosition.Rotation, curCell, Location.LandblockId.Raw, Location.Instance);
 
                             if (FastTick)
-                                success = PhysicsObj.update_object_server_new(Location.Instance, !EnforceMovement) ;
+                                success = PhysicsObj.update_object_server_new(newPosition.Instance, !EnforceMovement);
                             else
                                 success = PhysicsObj.update_object_server(newPosition.Instance);
 

@@ -4320,6 +4320,8 @@ namespace ACE.Server.Physics
         /// </summary>
         public bool update_object_server_new(uint instance, bool forcePos = true)
         {
+            RequestInstance = instance;
+
             // added teleporting bit to fix pk logout on death
             // system is setting them to frozen state, preventing the teleport
             if (Parent != null || CurCell == null || State.HasFlag(PhysicsState.Frozen) && !(WeenieObj.WorldObject?.Teleporting ?? false))
