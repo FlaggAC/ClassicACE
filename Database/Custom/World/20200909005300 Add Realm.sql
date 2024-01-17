@@ -1,4 +1,4 @@
-use realms_world;
+use realms_world_customdm;
 
 DROP TABLE IF EXISTS `realm_properties_string`;
 DROP TABLE IF EXISTS `realm_properties_bool`;

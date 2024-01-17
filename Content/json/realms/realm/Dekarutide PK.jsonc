@@ -1,0 +1,9 @@
+{
+    "name" : "Dekarutide PK",
+    "type" : "Realm",
+    "parent": "Dekarutide Classic",
+    "properties" : {
+        "Description": "The classic PK Realm",
+        "IsPKOnly": true
+    }
+}

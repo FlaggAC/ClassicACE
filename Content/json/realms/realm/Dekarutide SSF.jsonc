@@ -1,0 +1,9 @@
+{
+    "name" : "Dekarutide SSF",
+    "type" : "Realm",
+    "parent": "Dekarutide Classic",
+    "properties" : {
+        "Description": "Dekarutide Solo Self Found",
+        "CanInteractWithNeutralZone": false,
+    }
+}

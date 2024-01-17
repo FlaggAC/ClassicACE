@@ -1,0 +1,10 @@
+{
+    "name" : "Dekarutide HC",
+    "type" : "Realm",
+    "properties" : {
+        "Description": "Dekarutide Hardcore PvE.",
+        "CanBeHomeworld": true,
+        "CanInteractWithNeutralZone": true,
+        "HideoutEnabled": true
+    }
+}
