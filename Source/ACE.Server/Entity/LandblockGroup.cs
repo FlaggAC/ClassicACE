@@ -270,7 +270,7 @@ namespace ACE.Server.Entity
 
 
         /// <summary>
-        /// This will calculate the distance from the landblock group boarder.<para />
+        /// This will calculate the distance from the landblock group border.<para />
         /// -X = Inside the bounds, where -1 is the outer perimeter<para />
         ///  0 = Outside of the bounds but adjacent (touching)<para />
         /// +X = Has X landblocks between this and the bounds of the group<para />
@@ -284,7 +284,7 @@ namespace ACE.Server.Entity
         }
 
         /// <summary>
-        /// This will calculate the distance between the landblock group boarders.<para />
+        /// This will calculate the distance between the landblock group borders.<para />
         /// -X = Inside the bounds, where -1 is an overlapping outer perimeter<para />
         ///  0 = Outside of the bounds but adjacent (touching)<para />
         /// +X = Has X landblocks between this and the bounds of the group<para />

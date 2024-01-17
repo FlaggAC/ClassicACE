@@ -25,6 +25,7 @@ using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 using Position = ACE.Entity.Position;
+using ACE.Server.Realms;
 
 namespace ACE.Server.Entity
 {
@@ -47,6 +48,18 @@ namespace ACE.Server.Entity
 
 
         public LandblockId Id { get; }
+
+        public uint Instance;
+
+        public AppliedRuleset RealmRuleset { get; private set; }
+        public RealmShortcuts RealmHelpers { get; }
+
+        //Will be null if its a standard realm landblock - I.e. the default for a realm and not with an added ruleset applied
+        public EphemeralRealm InnerRealmInfo { get; set; }
+        public ulong LongId
+        {
+            get => (ulong)Instance << 32 | Id.Raw;
+        }
 
         /// <summary>
         /// Flag indicates if this landblock is permanently loaded (for example, towns on high-traffic servers)
@@ -163,11 +176,13 @@ namespace ACE.Server.Entity
         }
 
 
-        public Landblock(LandblockId id)
+        public Landblock(LandblockId id, uint instance)
         {
             //log.Debug($"Landblock({(id.Raw | 0xFFFF):X8})");
+            RealmHelpers = new RealmShortcuts(this);
 
             Id = id;
+            Instance = instance;
 
             CellLandblock = DatManager.CellDat.ReadFromDat<CellLandblock>(Id.Raw | 0xFFFF);
             LandblockInfo = DatManager.CellDat.ReadFromDat<LandblockInfo>((uint)Id.Landblock << 16 | 0xFFFE);
@@ -175,11 +190,14 @@ namespace ACE.Server.Entity
             lastActiveTime = DateTime.UtcNow;
 
             var cellLandblock = DBObj.GetCellLandblock(Id.Raw | 0xFFFF);
-            PhysicsLandblock = new Physics.Common.Landblock(cellLandblock);
+            PhysicsLandblock = new Physics.Common.Landblock(cellLandblock, instance);
         }
 
-        public void Init(bool reload = false)
+        public void Init(EphemeralRealm ephemeralRealm, bool reload = false)
         {
+            RealmRuleset = GetOrApplyRuleset(ephemeralRealm);
+            InnerRealmInfo = ephemeralRealm;
+
             if (!reload)
                 PhysicsLandblock.PostInit();
 
@@ -289,6 +307,7 @@ namespace ACE.Server.Entity
                 var explorationMarker = WorldObjectFactory.CreateNewWorldObject((uint)Factories.Enum.WeenieClassName.explorationMarker);
                 explorationMarker.Location = entry;
                 explorationMarker.Location.LandblockId = new LandblockId(explorationMarker.Location.GetCell());
+                explorationMarker.Location.Instance = Instance;
                 if (explorationMarker.EnterWorld())
                 {
                     AddWorldObject(explorationMarker);
@@ -297,12 +316,27 @@ namespace ACE.Server.Entity
                 {
                     attempts++;
                     explorationMarker.Destroy();
-                    if(attempts < 10)
+                    if (attempts < 10)
                         SpawnExplorationMarker();
                     else
                         log.Error($"Landblock 0x{Id} failed to spawn exploration marker");
                 }
             }
+        }
+
+        private AppliedRuleset GetOrApplyRuleset(EphemeralRealm ephemeralRealm = null)
+        {
+            if (ephemeralRealm != null)
+                return AppliedRuleset.MakeRerolledRuleset(ephemeralRealm.RulesetTemplate);
+
+            Position.ParseInstanceID(this.Instance, out bool _istemp, out var realmid, out var _shortinstid);
+            var realm = RealmManager.GetRealm(realmid);
+            if (realm == null)
+            {
+                //Shouldn't happen
+                throw new Exception($"Error: Realm {realmid} is null when creating landblock.");
+            }
+            return AppliedRuleset.MakeRerolledRuleset(realm.RulesetTemplate);
         }
 
         /// <summary>
@@ -311,9 +345,9 @@ namespace ACE.Server.Entity
         /// </summary>
         private void CreateWorldObjects()
         {
-            var objects = DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock);
+            var objects = DatabaseManager.World.GetCachedInstancesByLandblock(Id.Landblock, RealmRuleset.Realm.Id);
             var shardObjects = DatabaseManager.Shard.BaseDatabase.GetStaticObjectsByLandblock(Id.Landblock);
-            var factoryObjects = WorldObjectFactory.CreateNewWorldObjects(objects, shardObjects);
+            var factoryObjects = WorldObjectFactory.CreateNewWorldObjects(objects, shardObjects, null, Instance, RealmRuleset);
 
             actionQueue.EnqueueAction(new ActionEventDelegate(() =>
             {
@@ -360,7 +394,7 @@ namespace ACE.Server.Entity
         /// </summary>
         private void SpawnDynamicShardObjects()
         {
-            var dynamics = DatabaseManager.Shard.BaseDatabase.GetDynamicObjectsByLandblock(Id.Landblock);
+            var dynamics = DatabaseManager.Shard.BaseDatabase.GetDynamicObjectsByLandblock(Id.Landblock, Instance);
             var factoryShardObjects = WorldObjectFactory.CreateWorldObjects(dynamics);
 
             actionQueue.EnqueueAction(new ActionEventDelegate(() =>
@@ -519,9 +553,9 @@ namespace ACE.Server.Entity
 
                     pos.Frame.Origin.Z = PhysicsLandblock.GetZ(pos.Frame.Origin);
 
-                    wo.Location = new Position(pos.ObjCellID, pos.Frame.Origin, pos.Frame.Orientation);
+                    wo.Location = new Position(pos.ObjCellID, pos.Frame.Origin, pos.Frame.Orientation, Instance);
 
-                    var sortCell = LScape.get_landcell(pos.ObjCellID) as SortCell;
+                    var sortCell = LScape.get_landcell(pos.ObjCellID, Instance) as SortCell;
                     if (sortCell != null && sortCell.has_building())
                     {
                         wo.Destroy();
@@ -619,7 +653,7 @@ namespace ACE.Server.Entity
                 var weenie = DatabaseManager.World.GetCachedWeenie(obj.WeenieClassId);
                 WeenieMeshes.Add(
                     new ModelMesh(weenie.GetProperty(PropertyDataId.Setup) ?? 0,
-                    new DatLoader.Entity.Frame(new Position(obj.ObjCellId, obj.OriginX, obj.OriginY, obj.OriginZ, obj.AnglesX, obj.AnglesY, obj.AnglesZ, obj.AnglesW))));
+                    new DatLoader.Entity.Frame(new Position(obj.ObjCellId, obj.OriginX, obj.OriginY, obj.OriginZ, obj.AnglesX, obj.AnglesY, obj.AnglesZ, obj.AnglesW, this.Instance))));
             }
         }
 
@@ -1096,6 +1130,8 @@ namespace ACE.Server.Entity
             }
 
             wo.CurrentLandblock = this;
+
+            wo.Location.Instance = Instance;
 
             if (wo.PhysicsObj == null)
                 wo.InitPhysicsObj();
@@ -1623,6 +1659,31 @@ namespace ACE.Server.Entity
             }
 
             return locationString;
+        }
+
+        public class RealmShortcuts
+        {
+            Landblock Landblock { get; }
+            public RealmShortcuts(Landblock lb) { this.Landblock = lb; }
+
+            /// <summary>
+            /// True if the landblock is intended for a duel (does not include the duel staging area).
+            /// </summary>
+            public bool IsDuel
+            {
+                get
+                {
+                    return Landblock.InnerRealmInfo != null && Landblock.RealmRuleset.GetProperty(RealmPropertyBool.IsDuelingRealm);
+                }
+            }
+
+            public bool IsPkOnly
+            {
+                get
+                {
+                    return Landblock.RealmRuleset != null && Landblock.RealmRuleset.GetProperty(RealmPropertyBool.IsPKOnly);
+                }
+            }
         }
     }
 }

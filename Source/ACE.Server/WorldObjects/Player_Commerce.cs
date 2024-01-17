@@ -2,9 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using ACE.Common;
+
+using ACE.Database;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
+using ACE.Entity.Models;
 using ACE.Server.Entity;
+using ACE.Server.Entity.Actions;
 using ACE.Server.Factories;
 using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
@@ -288,6 +292,7 @@ namespace ACE.Server.WorldObjects
                 {
                     var itemName = (wo.StackSize ?? 1) > 1 ? wo.GetPluralName() : wo.Name;
                     Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, $"The {itemName} is unsellable.")); // retail message did not include item name, leaving in that for now.
+
                     continue;
                 }
 
@@ -295,6 +300,7 @@ namespace ACE.Server.WorldObjects
                 {
                     var itemName = (wo.StackSize ?? 1) > 1 ? wo.GetPluralName() : wo.Name;
                     Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, $"The {itemName} has no value and cannot be sold.")); // retail message did not include item name, leaving in that for now.
+
                     continue;
                 }
 
@@ -324,6 +330,7 @@ namespace ACE.Server.WorldObjects
                 {
                     var itemName = (wo.StackSize ?? 1) > 1 ? wo.GetPluralName() : wo.Name;
                     Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, $"You cannot sell that! The {itemName} is currently being traded.")); // custom message?
+
                     continue;
                 }
 

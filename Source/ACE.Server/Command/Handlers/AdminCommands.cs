@@ -906,6 +906,7 @@ namespace ACE.Server.Command.Handlers
                     return;
                 var weenie = DatabaseManager.World.GetCachedWeenie(teleportPOI.WeenieClassId);
                 var portalDest = new Position(weenie.GetPosition(PositionType.Destination));
+                portalDest.SetToDefaultRealmInstance(session.Player.Location.RealmID);
                 WorldObject.AdjustDungeon(portalDest);
                 session.Player.Teleport(portalDest);
             }
@@ -951,15 +952,19 @@ namespace ACE.Server.Command.Handlers
                     positionData[i] = position;
                 }
 
-                session.Player.Teleport(new Position(cell, positionData[0], positionData[1], positionData[2], positionData[4], positionData[5], positionData[6], positionData[3]));
+                uint inst = 0;
+                if (parameters.Length >= 9)
+                    inst = uint.Parse(parameters[8].Trim());
+
+                session.Player.Teleport(new Position(cell, positionData[0], positionData[1], positionData[2], positionData[4], positionData[5], positionData[6], positionData[3], inst));
             }
             catch (Exception)
             {
                 ChatPacket.SendServerMessage(session, "Invalid arguments for @teleloc", ChatMessageType.Broadcast);
-                ChatPacket.SendServerMessage(session, "Hint: @teleloc follows the same number order as displayed from @loc output", ChatMessageType.Broadcast);
-                ChatPacket.SendServerMessage(session, "Usage: @teleloc cell [x y z] (qw qx qy qz)", ChatMessageType.Broadcast);
-                ChatPacket.SendServerMessage(session, "Example: @teleloc 0x7F0401AD [12.319900 -28.482000 0.005000] -0.338946 0.000000 0.000000 -0.940806", ChatMessageType.Broadcast);
-                ChatPacket.SendServerMessage(session, "Example: @teleloc 0x7F0401AD 12.319900 -28.482000 0.005000 -0.338946 0.000000 0.000000 -0.940806", ChatMessageType.Broadcast);
+                ChatPacket.SendServerMessage(session, "Hint: @teleloc follows the same number order as displayed from @sloc output", ChatMessageType.Broadcast);
+                ChatPacket.SendServerMessage(session, "Usage: @teleloc cell [x y z] (qw qx qy qz) (instance id)", ChatMessageType.Broadcast);
+                ChatPacket.SendServerMessage(session, "Example: @teleloc 0x7F0401AD [12.319900 -28.482000 0.005000] -0.338946 0.000000 0.000000 -0.940806 0", ChatMessageType.Broadcast);
+                ChatPacket.SendServerMessage(session, "Example: @teleloc 0x7F0401AD 12.319900 -28.482000 0.005000 -0.338946 0.000000 0.000000 -0.940806 0", ChatMessageType.Broadcast);
                 ChatPacket.SendServerMessage(session, "Example: @teleloc 7F0401AD 12.319900 -28.482000 0.005000", ChatMessageType.Broadcast);
             }
         }
@@ -2431,7 +2436,7 @@ namespace ACE.Server.Command.Handlers
         /// </summary>
         private static WorldObject CreateObjectForCommand(Session session, Weenie weenie)
         {
-            var obj = WorldObjectFactory.CreateNewWorldObject(weenie);
+            var obj = WorldObjectFactory.CreateNewWorldObject(weenie, session.Player.RealmRuleset);
 
             //if (obj.TimeToRot == null)
             //obj.TimeToRot = double.MaxValue;
@@ -3469,7 +3474,7 @@ namespace ACE.Server.Command.Handlers
 
             var guid = GuidManager.NewPlayerGuid();
 
-            var player = new Player(weenie, guid, session.AccountId);
+            var player = new Player(weenie, guid, session.AccountId, RealmManager.DefaultRuleset);
 
             player.Biota.WeenieType = session.Player.WeenieType;
 
@@ -3506,7 +3511,7 @@ namespace ACE.Server.Command.Handlers
                         if (weenieOfWearable == null)
                             continue;
 
-                        var worldObject = WorldObjectFactory.CreateNewWorldObject(weenieOfWearable);
+                        var worldObject = WorldObjectFactory.CreateNewWorldObject(weenieOfWearable, session.Player.RealmRuleset);
 
                         if (worldObject == null)
                             continue;
@@ -3530,7 +3535,7 @@ namespace ACE.Server.Command.Handlers
                         if (weenieOfWearable == null)
                             continue;
 
-                        var worldObject = WorldObjectFactory.CreateNewWorldObject(weenieOfWearable);
+                        var worldObject = WorldObjectFactory.CreateNewWorldObject(weenieOfWearable, session.Player.RealmRuleset);
 
                         if (worldObject == null)
                             continue;
@@ -4748,7 +4753,7 @@ namespace ACE.Server.Command.Handlers
             var newLoc = new Position(session.Player.Location);
             newLoc.Rotation = prevLoc.Rotation;     // keep previous rotation
 
-            var setPos = new Physics.Common.SetPosition(newLoc.PhysPosition(), Physics.Common.SetPositionFlags.Teleport | Physics.Common.SetPositionFlags.Slide);
+            var setPos = new Physics.Common.SetPosition(newLoc.PhysPosition(), Physics.Common.SetPositionFlags.Teleport | Physics.Common.SetPositionFlags.Slide, newLoc.Instance);
             var result = obj.PhysicsObj.SetPosition(setPos);
 
             if (result != Physics.Common.SetPositionError.OK)
@@ -4759,9 +4764,9 @@ namespace ACE.Server.Command.Handlers
             }
             session.Network.EnqueueSend(new GameMessageSystemChat($"Moving {obj.Name} ({obj.Guid}) to current location", ChatMessageType.Broadcast));
 
-            obj.Location = obj.PhysicsObj.Position.ACEPosition();
+            obj.Location = obj.PhysicsObj.Position.ACEPosition(session.Player.Location.Instance);
 
-            if (prevLoc.Landblock != obj.Location.Landblock)
+            if (prevLoc.InstancedLandblock != obj.Location.InstancedLandblock)
             {
                 LandblockManager.RelocateObjectForPhysics(obj, true);
             }

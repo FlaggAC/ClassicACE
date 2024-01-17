@@ -18,6 +18,8 @@ using ACE.Server.Managers;
 using ACE.Server.Factories.Enum;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects.Entity;
+using ACE.Server.Realms;
+using System.Drawing;
 
 namespace ACE.Server.WorldObjects
 {
@@ -95,7 +97,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// A new biota be created taking all of its values from weenie.
         /// </summary>
-        public Vendor(Weenie weenie, ObjectGuid guid) : base(weenie, guid)
+        public Vendor(Weenie weenie, ObjectGuid guid, AppliedRuleset ruleset) : base(weenie, guid, ruleset)
         {
             Biota.PartialPersitanceFilter = new List<PartialPersistanceEntry>()
             {
@@ -191,6 +193,57 @@ namespace ACE.Server.WorldObjects
 
             var itemsForSale = new Dictionary<(uint weenieClassId, int paletteTemplate, double shade), uint>();
 
+            if (GetProperty(PropertyBool.RealmSelectorVendor) == true)
+            {
+                var weenie = DatabaseManager.World.GetCachedWeenie("realm-selector-token");
+                if (weenie == null)
+                    log.Error("Weenie not found: realm-selector-token" + Environment.NewLine + Environment.StackTrace);
+                else
+                {
+                    foreach (var realm in RealmManager.Realms.Where(x => x.StandardRules.GetProperty(RealmPropertyBool.CanBeHomeworld)))
+                    {
+                        WorldObject wo = WorldObjectFactory.CreateNewWorldObject(weenie.WeenieClassId, RealmRuleset);
+                        wo.Name = realm.Realm.Name;
+                        wo.Use = realm.StandardRules.GetProperty(RealmPropertyString.Description);
+                        wo.LongDesc = realm.StandardRules.DebugOutputString();
+                        wo.ItemType = ItemType.Service;
+                        wo.SetProperty(PropertyInt.HomeRealm, realm.Realm.Id);
+                        wo.ContainerId = Guid.Full;
+                        wo.CalculateObjDesc();
+                        DefaultItemsForSale.Add(wo.Guid, wo);
+                    }
+                }
+                inventoryloaded = true;
+                return;
+            }
+            else if (GetProperty(PropertyInt.RulesetStampVendorType).HasValue)
+            {
+                var rulesetVendorType = GetProperty(PropertyInt.RulesetStampVendorType).Value;
+                if (rulesetVendorType > 0)
+                {
+                    var weenie = DatabaseManager.World.GetCachedWeenie("realm-ruleset-stamp");
+                    if (weenie == null)
+                        log.Error("Weenie not found: realm-ruleset-stamp" + Environment.NewLine + Environment.StackTrace);
+                    else
+                    {
+                        var rulesets = RealmManager.Rulesets.Where(x => x.StandardRules.GetProperty(RealmPropertyInt.RulesetStampVendorCategory) == rulesetVendorType);
+                        foreach (var ruleset in rulesets)
+                        {
+                            WorldObject wo = WorldObjectFactory.CreateNewWorldObject(weenie.WeenieClassId, RealmRuleset);
+                            wo.Name = ruleset.Realm.Name;
+                            wo.Use = ruleset.StandardRules.GetProperty(RealmPropertyString.Description);
+                            wo.LongDesc = ruleset.StandardRules.DebugOutputString();
+                            wo.SetProperty(PropertyInt.HomeRealm, ruleset.Realm.Id);
+                            wo.ContainerId = Guid.Full;
+                            wo.CalculateObjDesc();
+                            DefaultItemsForSale.Add(wo.Guid, wo);
+                        }
+                    }
+                }
+                inventoryloaded = true;
+                return;
+            }
+
             foreach (var item in Biota.PropertiesCreateList.Where(x => x.DestinationType == DestinationType.Shop))
                 LoadInventoryItem(itemsForSale, item.WeenieClassId, item.Palette, item.Shade, item.StackSize);
 
@@ -212,7 +265,7 @@ namespace ACE.Server.WorldObjects
             //if (itemsForSale.ContainsKey(itemProfile))
             //    return;
 
-            var wo = WorldObjectFactory.CreateNewWorldObject(weenieClassId);
+            var wo = WorldObjectFactory.CreateNewWorldObject(weenieClassId, RealmRuleset);
 
             if (wo == null) return;
 
@@ -564,7 +617,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Creates world objects for generic items
         /// </summary>
-        private List<WorldObject> ItemProfileToWorldObjects(ItemProfile itemProfile)
+        private List<WorldObject> ItemProfileToWorldObjects(ItemProfile itemProfile, WorldObject worldObjectWithAllProps)
         {
             var results = new List<WorldObject>();
 
@@ -572,7 +625,8 @@ namespace ACE.Server.WorldObjects
 
             while (remaining > 0)
             {
-                var wo = WorldObjectFactory.CreateNewWorldObject(itemProfile.WeenieClassId);
+                var wo = WorldObjectFactory.CreateNewWorldObject(itemProfile.WeenieClassId, RealmRuleset);
+                wo.ClonePropertiesFrom(worldObjectWithAllProps);
 
                 if (itemProfile.Palette != null)
                     wo.PaletteTemplate = itemProfile.Palette;
@@ -699,7 +753,13 @@ namespace ACE.Server.WorldObjects
             var defaultItems = new List<WorldObject>();
 
             foreach (var defaultItemProfile in defaultItemProfiles)
-                defaultItems.AddRange(ItemProfileToWorldObjects(defaultItemProfile));
+            {
+                var item = DefaultItemsForSale[(new ObjectGuid(defaultItemProfile.ObjectGuid))];
+                if (item.ItemType == ItemType.Service)
+                    defaultItems.Add(item);
+                else
+                    defaultItems.AddRange(ItemProfileToWorldObjects(defaultItemProfile, item));
+            }
 
             var purchaseItems = defaultItems.Concat(uniqueItems).ToList();
 
@@ -921,8 +981,17 @@ namespace ACE.Server.WorldObjects
             // verify -- players purchasing multiple services in 1 transaction, and IsBusy state?
             var spell = new Spell(item.SpellDID ?? 0);
 
-            if (spell.NotFound)
+            if (item.GetProperty(PropertyInt.HomeRealm).HasValue)
+            {
+                var realmId = item.GetProperty(PropertyInt.HomeRealm).Value;
+                RealmManager.SetHomeRealm(target, realmId);
+                NumServicesSold++;
                 return;
+            }
+            if (spell.NotFound)
+            {
+                return;
+            }
 
             IsBusy = true;
 

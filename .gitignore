@@ -299,6 +299,9 @@ AppVeyor/
 [Cc]onfig.js
 log4net.config
 Database/tools/password.txt
+Source/ACE.Server/log4net.config
 docker.env
 docker-compose.yml
 docker-compose.arm64
+Source/ACE.GenerateSQLEnums/solutionpath.txt
+

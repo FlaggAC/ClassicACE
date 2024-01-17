@@ -261,7 +261,7 @@ namespace ACE.Server.WorldObjects
 
         public Vector3 GetAimVelocity(WorldObject target, float projectileSpeed)
         {
-            var crossLandblock = Location.Landblock != target.Location.Landblock;
+            var crossLandblock = Location.InstancedLandblock != target.Location.InstancedLandblock;
 
             // eye level -> target point
             var origin = crossLandblock ? Location.ToGlobal(false) : Location.Pos;
@@ -279,10 +279,10 @@ namespace ACE.Server.WorldObjects
 
         public Vector3 CalculateProjectileVelocity(Vector3 localOrigin, WorldObject target, float projectileSpeed, out Vector3 origin, out Quaternion rotation)
         {
-            var sourceLoc = PhysicsObj.Position.ACEPosition();
-            var targetLoc = target.PhysicsObj.Position.ACEPosition();
+	    var sourceLoc = PhysicsObj.Position.ACEPosition(Location.Instance);
+            var targetLoc = target.PhysicsObj.Position.ACEPosition(target.Location.Instance);
 
-            var crossLandblock = sourceLoc.Landblock != targetLoc.Landblock;
+            var crossLandblock = Location.InstancedLandblock != target.Location.InstancedLandblock;
 
             var startPos = crossLandblock ? sourceLoc.ToGlobal(false) : sourceLoc.Pos;
             var endPos = crossLandblock ? targetLoc.ToGlobal(false) : targetLoc.Pos;

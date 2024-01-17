@@ -29,6 +29,7 @@ using ACE.Server.WorldObjects.Managers;
 using Character = ACE.Database.Models.Shard.Character;
 using MotionTable = ACE.DatLoader.FileTypes.MotionTable;
 using System.Linq;
+using ACE.Server.Realms;
 
 namespace ACE.Server.WorldObjects
 {
@@ -127,7 +128,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// A new biota be created taking all of its values from weenie.
         /// </summary>
-        public Player(Weenie weenie, ObjectGuid guid, uint accountId) : base(weenie, guid)
+        public Player(Weenie weenie, ObjectGuid guid, uint accountId, AppliedRuleset ruleset) : base(weenie, guid, ruleset)
         {
             Character = new Character();
             Character.Id = guid.Full;
@@ -434,7 +435,12 @@ namespace ACE.Server.WorldObjects
             else if (target is Hotspot hotspot)
                 hotspot.OnCollideObject(this);
             else if (target is SpellProjectile spellProjectile)
-                spellProjectile.OnCollideObject(this);
+            {
+                if (this.RealmRuleset.GetProperty(RealmPropertyBool.SpellCastingPKDoubleCollisionCheck))
+                {
+                    spellProjectile.OnCollideObject(this);
+                }
+            }
             else if (target.ProjectileTarget != null)
                 ProjectileCollisionHelper.OnCollideObject(target, this);
         }
@@ -1019,7 +1025,7 @@ namespace ACE.Server.WorldObjects
 
             foreach (var creature in PhysicsObj.ObjMaint.GetKnownObjectsValuesAsCreature())
             {
-                if (isDungeon && Location.Landblock != creature.Location.Landblock)
+                if (isDungeon && Location.InstancedLandblock != creature.Location.InstancedLandblock)
                     continue;
 
                 var distSquared = Location.SquaredDistanceTo(creature.Location);
@@ -1312,7 +1318,7 @@ namespace ACE.Server.WorldObjects
                         if (colliding)
                         {
                             // try initial placement
-                            var result = PhysicsObj.SetPositionSimple(PhysicsObj.Position, true);
+                            var result = PhysicsObj.SetPositionSimple(PhysicsObj.Position, true, Location.Instance);
 
                             if (result == SetPositionError.OK)
                             {

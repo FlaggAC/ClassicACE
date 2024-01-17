@@ -94,7 +94,7 @@ namespace ACE.Server.WorldObjects
                 Fellowship.OnDeath(this);
 
             // if the player's lifestone is in a different landblock, also broadcast their demise to that landblock
-            if (PropertyManager.GetBool("lifestone_broadcast_death").Item && Sanctuary != null && Location.Landblock != Sanctuary.Landblock)
+            if (PropertyManager.GetBool("lifestone_broadcast_death").Item && Sanctuary != null && Location.InstancedLandblock != Sanctuary.InstancedLandblock)
             {
                 // ActionBroadcastKill might not work if other players around lifestone aren't aware of this player yet...
                 // this existing broadcast method is also based on the current visible objects to the player,
@@ -103,7 +103,7 @@ namespace ACE.Server.WorldObjects
 
                 // instead, we get all of the players in the lifestone landblock + adjacent landblocks,
                 // and possibly limit that to some radius around the landblock?
-                var lifestoneBlock = LandblockManager.GetLandblock(new LandblockId(Sanctuary.Landblock << 16 | 0xFFFF), true);
+                var lifestoneBlock = LandblockManager.GetLandblock(new LandblockId(Sanctuary.LandblockShort << 16 | 0xFFFF), Sanctuary.Instance, null, true);
 
                 // We enqueue the work onto the target landblock to ensure thread-safety. It's highly likely the lifestoneBlock is far away, and part of a different landblock group (and thus different thread).
                 lifestoneBlock.EnqueueAction(new ActionEventDelegate(() => lifestoneBlock.EnqueueBroadcast(excludePlayers, true, Sanctuary, LocalBroadcastRangeSq, broadcastMsg)));
@@ -127,30 +127,34 @@ namespace ACE.Server.WorldObjects
 
                 var globalPKDe = $"{lastDamager.Name} has defeated {Name}!";
 
-                //if ((Location.Cell & 0xFFFF) < 0x100)
-                //    globalPKDe += $" The kill occured at {Location.GetMapCoordStr()}";
-
-                if (Common.ConfigManager.Config.Server.WorldRuleset != Common.Ruleset.CustomDM)
-                {
-                    pkPlayer.PlayerKillsPk++;
-
-                    if ((Location.Cell & 0xFFFF) < 0x100)
-                        globalPKDe += $" The kill occured at {Location.GetMapCoordStr()}";
-                }
+                if (pkPlayer.CurrentLandblock.RealmHelpers.IsDuel)
+                    globalPKDe = $"{lastDamager.Name} has defeated {Name} in a duel!";
                 else
-                {                       
-                    if ((pkPlayer.Level ?? 1) > (Level ?? 1) + 10)
-                        pkPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"The leaderboards will not take into account this kill as {Name}'s level was too low for you!", ChatMessageType.Broadcast));
-                    else
+                {
+                    //if ((Location.Cell & 0xFFFF) < 0x100)
+                    //    globalPKDe += $" The kill occured at {Location.GetMapCoordStr()}";
+
+                    if (Common.ConfigManager.Config.Server.WorldRuleset != Common.Ruleset.CustomDM)
+                    {
                         pkPlayer.PlayerKillsPk++;
 
-                    string locationString = Landblock.GetLocationString(Location.LandblockId.Landblock);
-                    if (locationString == "" && (Location.Cell & 0xFFFF) < 0x100)
-                        globalPKDe += $" The kill occured at {Location.GetMapCoordStr()}";
+                        if ((Location.Cell & 0xFFFF) < 0x100)
+                            globalPKDe += $" The kill occured at {Location.GetMapCoordStr()}";
+                    }
                     else
-                        globalPKDe += $" The kill occured{locationString}.";
-                }
+                    {
+                        if ((pkPlayer.Level ?? 1) > (Level ?? 1) + 10)
+                            pkPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"The leaderboards will not take into account this kill as {Name}'s level was too low for you!", ChatMessageType.Broadcast));
+                        else
+                            pkPlayer.PlayerKillsPk++;
 
+                        string locationString = Landblock.GetLocationString(Location.LandblockId.Landblock);
+                        if (locationString == "" && (Location.Cell & 0xFFFF) < 0x100)
+                            globalPKDe += $" The kill occured at {Location.GetMapCoordStr()}";
+                        else
+                            globalPKDe += $" The kill occured{locationString}.";
+                    }
+                }
                 string webhookMsg = new String(globalPKDe);
 
                 globalPKDe += "\n[PKDe]";
@@ -312,10 +316,12 @@ namespace ACE.Server.WorldObjects
 
             // update vitae
             // players who died in a PKLite fight do not accrue vitae
-            if (!IsPKLiteDeath(topDamager) && !IsHardcore)
+            var duelRealm = RealmManager.GetRealm(HomeRealm)?.StandardRules?.GetProperty(RealmPropertyBool.IsDuelingRealm) == true ||
+                RealmRuleset?.GetProperty(RealmPropertyBool.IsDuelingRealm) == true;
+            if (!duelRealm && !IsPKLiteDeath(topDamager) && !IsHardcore)
                 InflictVitaePenalty();
 
-            if (IsPKDeath(topDamager) || AugmentationSpellsRemainPastDeath == 0)
+            if (!duelRealm && IsPKDeath(topDamager) || AugmentationSpellsRemainPastDeath == 0)
             {
                 var msgPurgeEnchantments = new GameEventMagicPurgeEnchantments(Session);
                 EnchantmentManager.RemoveAllEnchantments();
@@ -356,7 +362,8 @@ namespace ACE.Server.WorldObjects
                 ReportCollisions = previousReportCollisions;
                 IsFrozen = previousIsFrozen;
 
-                CreateCorpse(topDamager, hadVitae);
+                if (!duelRealm)
+                    CreateCorpse(topDamager, hadVitae);
 
                 if(IsHardcore)
                     Session.Network.EnqueueSend(new GameMessageSystemChat("Your corpse will release your soul in 30 seconds.", ChatMessageType.Broadcast));
@@ -391,7 +398,7 @@ namespace ACE.Server.WorldObjects
                 // teleport to sanctuary or best location
                 var newPosition = Sanctuary ?? Instantiation ?? Location;
 
-                WorldManager.ThreadSafeTeleport(this, newPosition, new ActionEventDelegate(() =>
+                WorldManager.ThreadSafeTeleport(this, newPosition, false, new ActionEventDelegate(() =>
                 {
                     // Stand back up
                     SetCombatMode(CombatMode.NonCombat);
@@ -437,7 +444,7 @@ namespace ACE.Server.WorldObjects
                 Session.Network.EnqueueSend(new GameEventPopupString(Session, $"And so ends the journey of {Name}.\n\nYou've lived in Dereth for {GameActionQueryAge.CalculateAgeMessage(Age ?? 0)}.\n\nBetter luck next time!"));
 
                 IsInDeathProcess = false;
-                var position = new Position(0x77060038, 163.226196f, 174.996063f, 0.005000f, 0.000000f, 0.000000f, 0.980516f, -0.196438f); // Gameplay mode selection island
+                var position = new Position(0x77060038, 163.226196f, 174.996063f, 0.005000f, 0.000000f, 0.000000f, 0.980516f, -0.196438f, 0); // Gameplay mode selection island
                 Sanctuary = new Position(position);
                 Instantiation = new Position(position);
 
@@ -462,7 +469,7 @@ namespace ACE.Server.WorldObjects
                     xpToRetain =  GetXPBetweenLevels(1, (int)levelToRestartAt) + (ulong)betweenLevelsXp;
                 }
 
-                WorldManager.ThreadSafeTeleport(this, position, new ActionEventDelegate(() =>
+                WorldManager.ThreadSafeTeleport(this, position, false, new ActionEventDelegate(() =>
                 {
                     // Stand back up
                     SetCombatMode(CombatMode.NonCombat);
@@ -1354,7 +1361,7 @@ namespace ACE.Server.WorldObjects
             if (MinimumTimeSincePk == null || (PropertyManager.GetBool("pk_server_safe_training_academy").Item && RecallsDisabled))
                 return;
 
-            if (PkLevel == PKLevel.NPK && !PropertyManager.GetBool("pk_server").Item && !PropertyManager.GetBool("pkl_server").Item)
+            if (PkLevel == PKLevel.NPK && !RealmRuleset.GetProperty(RealmPropertyBool.IsPKOnly) && !PropertyManager.GetBool("pkl_server").Item)
             {
                 MinimumTimeSincePk = null;
                 return;
@@ -1370,7 +1377,7 @@ namespace ACE.Server.WorldObjects
             var werror = WeenieError.None;
             var pkLevel = PkLevel;
 
-            if (PropertyManager.GetBool("pk_server").Item)
+            if (RealmRuleset.GetProperty(RealmPropertyBool.IsPKOnly))
                 pkLevel = PKLevel.PK;
             else if (PropertyManager.GetBool("pkl_server").Item)
                 pkLevel = PKLevel.PKLite;

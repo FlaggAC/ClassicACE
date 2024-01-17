@@ -160,7 +160,7 @@ namespace ACE.Server.WorldObjects
             var location = slumLord.Location.GetMapCoordStr();
             if (location == null)
             {
-                if (!HouseManager.ApartmentBlocks.TryGetValue(slumLord.Location.Landblock, out location))
+                if (!HouseManager.ApartmentBlocks.TryGetValue(slumLord.Location.LandblockShort, out location))
                     log.Error($"{Name}.GiveDeed() - couldn't find location {slumLord.Location.ToLOCString()}");
             }
 
@@ -754,6 +754,7 @@ namespace ACE.Server.WorldObjects
                     logLine += $"{stackStr}{item.Name} ({item.Guid}) is currently being traded, skipping." + Environment.NewLine;
                     continue;
                 }
+
                 sentItems.Add(item);
             }
             //Console.WriteLine();
@@ -939,6 +940,10 @@ namespace ACE.Server.WorldObjects
 
         public House GetHouse(uint? houseInstance)
         {
+            // Not supported yet on AC Realms
+            return null;
+
+            /*
             if (houseInstance == null)
                 return null;
 
@@ -952,7 +957,7 @@ namespace ACE.Server.WorldObjects
                 return House = House.Load(houseGuid);
 
             var loaded = LandblockManager.GetLandblock(landblockId, false);
-            return House = loaded.GetObject(new ObjectGuid(houseGuid)) as House;
+            return House = loaded.GetObject(new ObjectGuid(houseGuid)) as House;*/
         }
 
         public void HandleActionAddGuest(string guestName)
@@ -1767,7 +1772,9 @@ namespace ACE.Server.WorldObjects
 
         public House GetHouse(IPlayer player)
         {
-            if (player?.HouseInstance == null)
+            return null;
+            /*
+            if (player.HouseInstance == null)
                 return null;
 
             // is landblock loaded?
@@ -1785,6 +1792,7 @@ namespace ACE.Server.WorldObjects
 
             // load an offline copy
             return House.Load(houseGuid);
+            */
         }
 
         public bool IsMultiHouseOwner(bool showMsg = true)

@@ -480,6 +480,9 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("loadalllandblocks", AccessLevel.Developer, CommandHandlerFlag.None, "Loads all Landblocks. This is VERY crude. Do NOT use it on a live server!!! It will likely crash the server.  Landblock resources will be loaded async and will continue to do work even after all landblocks have been loaded.")]
         public static void HandleLoadAllLandblocks(Session session, params string[] parameters)
         {
+            //Not supported on AC Realms
+            return;
+
             CommandHandlerHelper.WriteOutputInfo(session, "Loading landblocks. This will likely crash the server. Landblock resources will be loaded async and will continue to do work even after all landblocks have been loaded.");
 
             Task.Run(() =>
@@ -491,7 +494,7 @@ namespace ACE.Server.Command.Handlers
                     for (int y = 0; y <= 0xFE; y++)
                     {
                         var blockid = new LandblockId((byte)x, (byte)y);
-                        LandblockManager.GetLandblock(blockid, false, false);
+                        LandblockManager.GetLandblock(blockid, 0, null, false, false);
                     }
                 }
 
@@ -671,7 +674,7 @@ namespace ACE.Server.Command.Handlers
                 positionData[i] = position;
             }
 
-            session.Player.Teleport(new Position(cell, positionData[0], positionData[1], positionData[2], positionData[3], positionData[4], positionData[5], positionData[6]));
+            session.Player.Teleport(new Position(cell, positionData[0], positionData[1], positionData[2], positionData[3], positionData[4], positionData[5], positionData[6], session.Player.Location.Instance));
         }
 
         /// <summary>
@@ -1462,6 +1465,26 @@ namespace ACE.Server.Command.Handlers
             creature.TurnTo(session.Player, true);
         }
 
+        [CommandHandler("sloc", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Reports the location that the server believes the player is at.")]
+        public static void HandleServerLoc(Session session, params string[] parameters)
+        {
+            session.Network.EnqueueSend(new GameMessageSystemChat(session.Player.Location.ToLOCString(), ChatMessageType.Broadcast));
+        }
+
+        [CommandHandler("debugloc", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Toggles location debugging for a player", "PlayerName")]
+        public static void ToggleDebugLoc(Session session, params string[] parameters)
+        {
+            var playerName = string.Join(" ", parameters);
+            var player = PlayerManager.GetOnlinePlayer(playerName);
+            if (player == null)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Player {playerName} was not found.", ChatMessageType.Broadcast));
+                return;
+            }
+            player.DebugLoc = !player.DebugLoc;
+            session.Network.EnqueueSend(new GameMessageSystemChat($"DebugLoc is now {player.DebugLoc} for player {playerName}.", ChatMessageType.Broadcast));
+        }
+
         [CommandHandler("debugmove", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Toggles movement debugging for the last appraised monster", "<on/off>")]
         public static void ToggleMovementDebug(Session session, params string[] parameters)
         {
@@ -2148,7 +2171,8 @@ namespace ACE.Server.Command.Handlers
                     return;
                 }
 
-                var pos = new Position(dest.ObjCellId, dest.OriginX, dest.OriginY, dest.OriginZ, dest.AnglesX, dest.AnglesY, dest.AnglesZ, dest.AnglesW);
+                var pos = new Position(dest.ObjCellId, dest.OriginX, dest.OriginY, dest.OriginZ, dest.AnglesX, dest.AnglesY, dest.AnglesZ, dest.AnglesW, session.Player.Location.Instance);
+                pos.SetToDefaultRealmInstance(session.Player.Location.RealmID);
                 WorldObject.AdjustDungeon(pos);
 
                 session.Player.Teleport(pos);
@@ -2182,7 +2206,8 @@ namespace ACE.Server.Command.Handlers
                     return;
                 }
 
-                var pos = new Position(dest.ObjCellId, dest.OriginX, dest.OriginY, dest.OriginZ, dest.AnglesX, dest.AnglesY, dest.AnglesZ, dest.AnglesW);
+                var pos = new Position(dest.ObjCellId, dest.OriginX, dest.OriginY, dest.OriginZ, dest.AnglesX, dest.AnglesY, dest.AnglesZ, dest.AnglesW, session.Player.Location.Instance);
+                pos.SetToDefaultRealmInstance(session.Player.Location.RealmID);
                 WorldObject.AdjustDungeon(pos);
 
                 session.Player.Teleport(pos);
@@ -2195,7 +2220,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("dungeonname", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows the dungeon name for the current landblock")]
         public static void HandleDungeonName(Session session, params string[] parameters)
         {
-            var landblock = session.Player.Location.Landblock;
+            var landblock = session.Player.Location.InstancedLandblock;
 
             var blockStart = landblock << 16;
             var blockEnd = blockStart | 0xFFFF;
@@ -2513,7 +2538,7 @@ namespace ACE.Server.Command.Handlers
                 msg += $"------- IsInDeathProcess: {player.IsInDeathProcess}\n";
                 var foundOnLandblock = false;
                 if (player.CurrentLandblock != null)
-                    foundOnLandblock = LandblockManager.GetLandblock(player.CurrentLandblock.Id, false).GetObject(player.Guid) != null;
+                    foundOnLandblock = LandblockManager.GetLandblock(player.CurrentLandblock.Id, player.CurrentLandblock.Instance, null, false).GetObject(player.Guid) != null;
                 msg += $"------- FoundOnLandblock: {foundOnLandblock}\n";
                 var playerForcedLogOffRequested = player.ForcedLogOffRequested;
                 msg += $"------- ForcedLogOffRequested: {playerForcedLogOffRequested}\n";
@@ -2903,6 +2928,10 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("barrier-test", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows debug information for house barriers")]
         public static void HandleBarrierTest(Session session, params string[] parameters)
         {
+            // Not supported on AC Realms
+            return;
+
+            /*
             var cell = session.Player.Location.Cell;
             Console.WriteLine($"CurCell: {cell:X8}");
 
@@ -2910,7 +2939,7 @@ namespace ACE.Server.Command.Handlers
             {
                 Console.WriteLine($"Dungeon landblock");
 
-                if (!HouseManager.ApartmentBlocks.ContainsKey(session.Player.Location.Landblock))
+                if (!HouseManager.ApartmentBlocks.ContainsKey(session.Player.Location.InstancedLandblock))
                     return;
             }
             else
@@ -2921,6 +2950,7 @@ namespace ACE.Server.Command.Handlers
 
             var barrier = HouseCell.HouseCells.ContainsKey(cell);
             Console.WriteLine($"Barrier: {barrier}");
+            */
         }
 
         [CommandHandler("targetloc", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows the location of the last appraised object")]
@@ -3224,14 +3254,14 @@ namespace ACE.Server.Command.Handlers
             landblock.DestroyAllNonPlayerObjects();
 
             // clear landblock cache
-            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock.Id.Landblock);
+            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock.Id.Landblock, 0);
 
             // reload landblock
             var actionChain = new ActionChain();
             actionChain.AddDelayForOneTick();
             actionChain.AddAction(session.Player, () =>
             {
-                landblock.Init(true);
+                landblock.Init(landblock.InnerRealmInfo, true);
             });
             actionChain.EnqueueChain();
         }
@@ -4076,7 +4106,7 @@ namespace ACE.Server.Command.Handlers
                     session.Network.EnqueueSend(new GameEventPortalStorm(session));
 
                     // We're going to move the player to 0,0
-                    Position newPos = new Position(0x7F7F001C, 84, 84, 80, 0, 0, 0, 1);
+                    Position newPos = new Position(0x7F7F001C, 84, 84, 80, 0, 0, 0, 1, session.Player.Location.Instance);
                     session.Player.Teleport(newPos);
                     break;
                 case 3:

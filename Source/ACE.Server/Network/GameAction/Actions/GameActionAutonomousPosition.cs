@@ -15,7 +15,7 @@ namespace ACE.Server.Network.GameAction.Actions
         {
             //Console.WriteLine($"{session.Player.Name}.AutoPos");
 
-            var position = new Position(message.Payload);
+            var position = new Position(message.Payload, session.Player.Location.Instance);
 
             if (position.PositionX == 0 && position.PositionY == 0 && position.Cell == 0)
             {

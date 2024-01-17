@@ -308,6 +308,9 @@ namespace ACE.Server
             log.Info("Initializing Physics Engine...");
             PhysicsEngine.Initialize(true);
 
+            log.Info("Initializing RealmManager...");
+            RealmManager.Initialize();
+
             log.Info("Initializing PlayerManager...");
             PlayerManager.Initialize();
 

@@ -1335,7 +1335,7 @@ namespace ACE.Server.WorldObjects
 
             foreach (var player in PhysicsObj.ObjMaint.GetKnownPlayersValuesAsPlayer())
             {
-                if (isDungeon && Location.Landblock != player.Location.Landblock)
+                if (isDungeon && Location.InstancedLandblock != player.Location.InstancedLandblock)
                     continue;
 
                 if (Visibility && !player.Adminvision && !player.IsAware(this))
@@ -1374,7 +1374,7 @@ namespace ACE.Server.WorldObjects
                 if (self != null && squelchType != null && player.SquelchManager.Squelches.Contains(self, squelchType.Value))
                     continue;
 
-                if (isDungeon && Location.Landblock != player.Location.Landblock)
+                if (isDungeon && Location.InstancedLandblock != player.Location.InstancedLandblock)
                     continue;
 
                 if (Visibility && !player.Adminvision && !player.IsAware(this))

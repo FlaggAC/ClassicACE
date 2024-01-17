@@ -387,8 +387,8 @@ namespace ACE.Server.WorldObjects
             Success
         }
 
-        public static float Windup_MaxMove = 6.0f;
-        public static float Windup_MaxMoveSq = Windup_MaxMove * Windup_MaxMove;
+        //public static float Windup_MaxMove = 6.0f;
+        //public static float Windup_MaxMoveSq = Windup_MaxMove * Windup_MaxMove;
 
         public bool VerifyBusy()
         {
@@ -796,7 +796,7 @@ namespace ACE.Server.WorldObjects
             }
 
             //Console.WriteLine($"Angle: " + angle);
-            var maxAngle = PropertyManager.GetDouble("spellcast_max_angle").Item;
+            var maxAngle = RealmRuleset.GetProperty(ACE.Entity.Enum.Properties.RealmPropertyFloat.Spellcasting_Max_Angle);
 
             if (RecordCast.Enabled)
                 RecordCast.Log($"DoCastSpell(angle={angle} vs. {maxAngle})");
@@ -871,7 +871,8 @@ namespace ACE.Server.WorldObjects
 
             if (FastTick)
             {
-                if (PropertyManager.GetDouble("spellcast_max_angle").Item > 5.0f && IsWithinAngle(target))
+                
+                if (RealmRuleset.GetProperty(ACE.Entity.Enum.Properties.RealmPropertyFloat.Spellcasting_Max_Angle) > 5.0f && IsWithinAngle(target))
                 {
                     // emulate current gdle TurnTo - doesn't match retail, but some players may prefer this
                     OnMoveComplete_Magic(WeenieError.None);
@@ -950,8 +951,8 @@ namespace ACE.Server.WorldObjects
             var dist = StartPos.Distance(PhysicsObj.Position);
 
             // only PKs affected by these caps?
-            //if (dist > Windup_MaxMove && PlayerKillerStatus != PlayerKillerStatus.NPK)
-            if (dist > PropertyManager.GetDouble("pk_cast_radius").Item && PlayerKillerStatus != PlayerKillerStatus.NPK)
+            var Windup_MaxMove = RealmRuleset.GetProperty(ACE.Entity.Enum.Properties.RealmPropertyFloat.SpellCastingPvPWindupMaxMove);
+            if (dist > Windup_MaxMove && PlayerKillerStatus != PlayerKillerStatus.NPK)
             {
                 //player.Session.Network.EnqueueSend(new GameEventWeenieError(player.Session, WeenieError.YouHaveMovedTooFar));
                 Session.Network.EnqueueSend(new GameMessageSystemChat("Your movement disrupted spell casting!", ChatMessageType.Magic));
@@ -1546,6 +1547,8 @@ namespace ACE.Server.WorldObjects
             if (MagicState.CastGestureStartTime != DateTime.MinValue)
             {
                 var dist = StartPos.Distance(PhysicsObj.Position);
+
+                var Windup_MaxMove = RealmRuleset.GetProperty(ACE.Entity.Enum.Properties.RealmPropertyFloat.SpellCastingPvPWindupMaxMove);
 
                 if (dist > Windup_MaxMove && PlayerKillerStatus != PlayerKillerStatus.NPK)
                 {

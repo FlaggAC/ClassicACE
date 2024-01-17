@@ -291,7 +291,7 @@ namespace ACE.Server.Managers
         {
             var p = biota.BiotaPropertiesPosition.FirstOrDefault(i => i.PositionType == (ushort)PositionType.Location);
 
-            return GetCoords(new Position(p.ObjCellId, p.OriginX, p.OriginY, p.OriginZ, p.AnglesX, p.AnglesY, p.AnglesZ, p.AnglesW));
+            return GetCoords(new Position(p.ObjCellId, p.OriginX, p.OriginY, p.OriginZ, p.AnglesX, p.AnglesY, p.AnglesZ, p.AnglesW, 0));
         }
 
         /// <summary>
@@ -304,7 +304,7 @@ namespace ACE.Server.Managers
             if (coords == null)
             {
                 // apartment slumlord?
-                if (ApartmentBlocks.TryGetValue(position.Landblock, out var apartmentBlock))
+                if (ApartmentBlocks.TryGetValue(position.LandblockShort, out var apartmentBlock))
                     coords = $"{apartmentBlock} - ";
                 else
                     log.Error($"[HOUSE] HouseManager.GetCoords({position}) - couldn't find apartment block");
@@ -700,6 +700,10 @@ namespace ACE.Server.Managers
         /// <param name="callback">called when the slumlord inventory is fully loaded</param>
         public static void GetHouse(uint houseGuid, Action<House> callback)
         {
+            // Not supported yet on AC Realms
+            return;
+
+            /*
             var landblock = (ushort)((houseGuid >> 12) & 0xFFFF);
 
             var landblockId = new LandblockId((uint)(landblock << 16 | 0xFFFF));
@@ -734,7 +738,8 @@ namespace ACE.Server.Managers
                 RegisterCallback(houseBiota, callback);
             }
             else
-                log.Error($"[HOUSE] HouseManager.GetHouse({houseGuid:X8}): couldn't find house on loaded landblock");
+                log.Error($"HouseManager.GetHouse({houseGuid:X8}): couldn't find house on loaded landblock");
+            */
         }
 
         /// <summary>

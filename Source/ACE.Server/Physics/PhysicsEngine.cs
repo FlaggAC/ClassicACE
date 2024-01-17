@@ -112,7 +112,7 @@ namespace ACE.Server.Physics
             Player = player;
         }
 
-        public void UseTime()
+        public void UseTime(uint instance)
         {
             var deltaTime = PhysicsTimer.CurrentTime - LastUpdate;
             if (deltaTime < 0.0f)
@@ -124,7 +124,7 @@ namespace ACE.Server.Physics
 
             foreach (var obj in Iter)
             {
-                obj.update_object();
+                obj.update_object(instance);
                 if (Player.Equals(obj))
                     SmartBox.PlayerPhysicsUpdatedCallback();
             }

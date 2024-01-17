@@ -1044,6 +1044,7 @@ namespace ACE.Server.WorldObjects.Managers
                         var currentPos = creature.Location;
 
                         var newPos = new Position();
+                        newPos.Instance = creature.Location.Instance;
                         newPos.LandblockId = new LandblockId(emote.ObjCellId ?? currentPos.LandblockId.Raw);
 
                         newPos.Pos = new Vector3(emote.OriginX ?? currentPos.Pos.X, emote.OriginY ?? currentPos.Pos.Y, emote.OriginZ ?? currentPos.Pos.Z);
@@ -1232,7 +1233,7 @@ namespace ACE.Server.WorldObjects.Managers
                 case EmoteType.SetSanctuaryPosition:
 
                     if (player != null)
-                        player.SetPosition(PositionType.Sanctuary, new Position(emote.ObjCellId.Value, emote.OriginX.Value, emote.OriginY.Value, emote.OriginZ.Value, emote.AnglesX.Value, emote.AnglesY.Value, emote.AnglesZ.Value, emote.AnglesW.Value));
+                        player.SetPosition(PositionType.Sanctuary, new Position(emote.ObjCellId.Value, emote.OriginX.Value, emote.OriginY.Value, emote.OriginZ.Value, emote.AnglesX.Value, emote.AnglesY.Value, emote.AnglesZ.Value, emote.AnglesW.Value, player.Location.Instance));
                     break;
 
                 case EmoteType.Sound:
@@ -1344,7 +1345,7 @@ namespace ACE.Server.WorldObjects.Managers
                             {
                                 // ensure same landblock
                                 if ((emote.ObjCellId.Value >> 16) == (creature.Location.Cell >> 16))
-                                    creature.FakeTeleport(new Position(emote.ObjCellId.Value, emote.OriginX.Value, emote.OriginY.Value, emote.OriginZ.Value, emote.AnglesX.Value, emote.AnglesY.Value, emote.AnglesZ.Value, emote.AnglesW.Value));
+                                    creature.FakeTeleport(new Position(emote.ObjCellId.Value, emote.OriginX.Value, emote.OriginY.Value, emote.OriginZ.Value, emote.AnglesX.Value, emote.AnglesY.Value, emote.AnglesZ.Value, emote.AnglesW.Value, creature.Location.Instance));
                             }
                             else // position is relative to creature's current location
                             {
@@ -1369,10 +1370,11 @@ namespace ACE.Server.WorldObjects.Managers
                         {
                             if (emote.ObjCellId.Value > 0)
                             {
-                                var destination = new Position(emote.ObjCellId.Value, emote.OriginX.Value, emote.OriginY.Value, emote.OriginZ.Value, emote.AnglesX.Value, emote.AnglesY.Value, emote.AnglesZ.Value, emote.AnglesW.Value);
+                                var destination = new Position(emote.ObjCellId.Value, emote.OriginX.Value, emote.OriginY.Value, emote.OriginZ.Value, emote.AnglesX.Value, emote.AnglesY.Value, emote.AnglesZ.Value, emote.AnglesW.Value, player.Location.Instance);
+                                destination.SetToDefaultRealmInstance(player.Location.RealmID);
 
                                 WorldObject.AdjustDungeon(destination);
-                                WorldManager.ThreadSafeTeleport(player, destination);
+                                WorldManager.ThreadSafeTeleport(player, destination, false);
                             }
                             else // position is relative to WorldObject's current location
                             {
@@ -1382,7 +1384,7 @@ namespace ACE.Server.WorldObjects.Managers
                                 relativeDestination.LandblockId = new LandblockId(relativeDestination.GetCell());
 
                                 WorldObject.AdjustDungeon(relativeDestination);
-                                WorldManager.ThreadSafeTeleport(player, relativeDestination);
+                                WorldManager.ThreadSafeTeleport(player, relativeDestination, false);
                             }
                         }
                     }

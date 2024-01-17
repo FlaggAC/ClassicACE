@@ -16,6 +16,7 @@ using ACE.Server.Managers;
 using ACE.Server.Entity;
 using ACE.Database.Models.Shard;
 using ACE.Common;
+using ACE.Server.Realms;
 
 namespace ACE.Server.Factories
 {
@@ -42,7 +43,7 @@ namespace ACE.Server.Factories
             else if (weenieType == WeenieType.Sentinel)
                 player = new Sentinel(weenie, guid, accountId);
             else
-                player = new Player(weenie, guid, accountId);
+                player = new Player(weenie, guid, accountId, RealmManager.DefaultRuleset);
 
             if (Common.ConfigManager.Config.Server.WorldRuleset == Common.Ruleset.CustomDM)
                 player.SetProperty(PropertyInt.Version, Player.LatestVersion);
@@ -297,13 +298,13 @@ namespace ACE.Server.Factories
 
             var starterArea = DatManager.PortalDat.CharGen.StarterAreas[(int)startArea];
 
-            var instantiation = new Position(0xA9B40019, 84, 7.1f, 94, 0, 0, -0.0784591f, 0.996917f); // ultimate fallback.
+            var instantiation = new Position(0xA9B40019, 84, 7.1f, 94, 0, 0, -0.0784591f, 0.996917f, 0); // ultimate fallback.
 
             if (Common.ConfigManager.Config.Server.WorldRuleset == Common.Ruleset.EoR)
             {
                 player.Location = new Position(starterArea.Locations[0].ObjCellID,
                     starterArea.Locations[0].Frame.Origin.X, starterArea.Locations[0].Frame.Origin.Y, starterArea.Locations[0].Frame.Origin.Z,
-                    starterArea.Locations[0].Frame.Orientation.X, starterArea.Locations[0].Frame.Orientation.Y, starterArea.Locations[0].Frame.Orientation.Z, starterArea.Locations[0].Frame.Orientation.W);
+                    starterArea.Locations[0].Frame.Orientation.X, starterArea.Locations[0].Frame.Orientation.Y, starterArea.Locations[0].Frame.Orientation.Z, starterArea.Locations[0].Frame.Orientation.W, 0);
 
                 var spellFreeRide = new ACE.Database.Models.World.Spell();
                 switch (starterArea.Name)
@@ -327,7 +328,7 @@ namespace ACE.Server.Factories
                         break;
                 }
                 if (spellFreeRide != null && spellFreeRide.Name != "")
-                    instantiation = new Position(spellFreeRide.PositionObjCellId.Value, spellFreeRide.PositionOriginX.Value, spellFreeRide.PositionOriginY.Value, spellFreeRide.PositionOriginZ.Value, spellFreeRide.PositionAnglesX.Value, spellFreeRide.PositionAnglesY.Value, spellFreeRide.PositionAnglesZ.Value, spellFreeRide.PositionAnglesW.Value);
+                    instantiation = new Position(spellFreeRide.PositionObjCellId.Value, spellFreeRide.PositionOriginX.Value, spellFreeRide.PositionOriginY.Value, spellFreeRide.PositionOriginZ.Value, spellFreeRide.PositionAnglesX.Value, spellFreeRide.PositionAnglesY.Value, spellFreeRide.PositionAnglesZ.Value, spellFreeRide.PositionAnglesW.Value, 0);
 
                 player.SetProperty(PropertyBool.RecallsDisabled, true);
             }
@@ -353,25 +354,25 @@ namespace ACE.Server.Factories
                 {
                     case "Shoushi":
                         if(ThreadSafeRandom.Next(0, 1) == 1)
-                            player.Location = new Position(0xD6550023, 108.765625f, 62.215103f, 52.005001f, 0.000000f, 0.000000f, -0.300088f, 0.953912f); // Shoushi West
+                            player.Location = new Position(0xD6550023, 108.765625f, 62.215103f, 52.005001f, 0.000000f, 0.000000f, -0.300088f, 0.953912f, 0); // Shoushi West
                         else
-                            player.Location = new Position(0xDE51001D, 85.017159f, 107.291908f, 15.861228f, 0.000000f, 0.000000f, 0.323746f, 0.946144f); // Shoushi Southeast
+                            player.Location = new Position(0xDE51001D, 85.017159f, 107.291908f, 15.861228f, 0.000000f, 0.000000f, 0.323746f, 0.946144f, 0); // Shoushi Southeast
                         break;
                     case "Yaraq":
                         if (ThreadSafeRandom.Next(0, 1) == 1)
-                            player.Location = new Position(0x7D680012, 65.508179f, 37.516647f, 16.257774f, 0.000000f, 0.000000f, -0.950714f, 0.310069f); // Yaraq North
+                            player.Location = new Position(0x7D680012, 65.508179f, 37.516647f, 16.257774f, 0.000000f, 0.000000f, -0.950714f, 0.310069f, 0); // Yaraq North
                         else
-                            player.Location = new Position(0x8164000D, 40.296101f, 107.638382f, 31.363008f, 0.000000f, 0.000000f, -0.699884f, -0.714257f); //Yaraq East
+                            player.Location = new Position(0x8164000D, 40.296101f, 107.638382f, 31.363008f, 0.000000f, 0.000000f, -0.699884f, -0.714257f, 0); //Yaraq East
                         break;
                     case "Holtburg":
                     default:
                         if (ThreadSafeRandom.Next(0, 1) == 1)
-                            player.Location = new Position(0xA5B4002A, 131.134338f, 33.602352f, 53.077141f, 0.000000f, 0.000000f, -0.263666f, 0.964614f); // Holtburg West
+                            player.Location = new Position(0xA5B4002A, 131.134338f, 33.602352f, 53.077141f, 0.000000f, 0.000000f, -0.263666f, 0.964614f, 0); // Holtburg West
                         else
-                            player.Location = new Position(0xA9B00015, 60.108139f, 103.333549f, 64.402885f, 0.000000f, 0.000000f, -0.381155f, -0.924511f); // Holtburg South
+                            player.Location = new Position(0xA9B00015, 60.108139f, 103.333549f, 64.402885f, 0.000000f, 0.000000f, -0.381155f, -0.924511f, 0); // Holtburg South
                         break;
                     case "Hardcore":
-                        player.Location = new Position(0x77060038, 163.226196f, 174.996063f, 0.005000f,0.000000f, 0.000000f, 0.980516f, -0.196438f); // Gameplay mode selection island
+                        player.Location = new Position(0x77060038, 163.226196f, 174.996063f, 0.005000f,0.000000f, 0.000000f, 0.980516f, -0.196438f, 0); // Gameplay mode selection island
                         player.AddTitle((uint)CharacterTitle.DeadMeat, true, true, true); // This title was replaced with the "In Limbo" title.
                         player.SetProperty(PropertyBool.RecallsDisabled, true);
                         player.GameplayMode = GameplayModes.Limbo;
@@ -577,7 +578,7 @@ namespace ACE.Server.Factories
             if (weenie == null)
                 return null;
 
-            var worldObject = (Clothing)WorldObjectFactory.CreateNewWorldObject(weenie);
+            var worldObject = (Clothing)WorldObjectFactory.CreateNewWorldObject(weenie, RealmManager.DefaultRuleset);
 
             worldObject.SetProperties((int)palette, shade);
 

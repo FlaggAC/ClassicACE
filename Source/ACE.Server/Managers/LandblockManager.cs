@@ -15,7 +15,7 @@ using ACE.Server.Entity;
 using ACE.Server.WorldObjects;
 using ACE.Database;
 using ACE.Server.Entity.Actions;
-
+using ACE.Server.Realms;
 namespace ACE.Server.Managers
 {
     /// <summary>
@@ -30,11 +30,13 @@ namespace ACE.Server.Managers
         /// </summary>
         private static readonly object landblockMutex = new object();
 
+        //Important: As of AC Realms, reading and writing to this must be done via LandblockDictFetch and LandblockDictCommit
         /// <summary>
         /// A table of all the landblocks in the world map
         /// Landblocks which aren't currently loaded will be null here
         /// </summary>
-        private static readonly Landblock[,] landblocks = new Landblock[255, 255];
+        private static readonly Dictionary<ulong, Landblock> landblocks = new Dictionary<ulong, Landblock>();
+        private static readonly HashSet<uint> pendingInstanceIds = new HashSet<uint>();
 
         /// <summary>
         /// A lookup table of all the currently loaded landblocks
@@ -112,9 +114,8 @@ namespace ACE.Server.Managers
 
         private static void PreloadLandblock(uint landblock, PreloadedLandblocks preloadLandblock)
         {
-            var landblockID = new LandblockId(landblock);
-            GetLandblock(landblockID, preloadLandblock.IncludeAdjacents, preloadLandblock.Permaload);
-            log.DebugFormat("Landblock {0:X4}, ({1}) preloaded. IncludeAdjacents = {2}, Permaload = {3}", landblockID.Landblock, preloadLandblock.Description, preloadLandblock.IncludeAdjacents, preloadLandblock.Permaload);
+            //Preload landblocks not supported on AC Realms (for now)
+            return; 
         }
 
         public static readonly uint[] apartmentLandblocks =
@@ -364,7 +365,7 @@ namespace ACE.Server.Managers
         /// <param name="loadAdjacents">If TRUE, ensures all of the adjacent landblocks for this WorldObject are loaded</param>
         public static bool AddObject(WorldObject worldObject, bool loadAdjacents = false)
         {
-            var block = GetLandblock(worldObject.Location.LandblockId, loadAdjacents);
+            var block = GetLandblock(worldObject.Location.LandblockId, worldObject.Location.Instance, null, loadAdjacents);
 
             return block.AddWorldObject(worldObject);
         }
@@ -375,7 +376,7 @@ namespace ACE.Server.Managers
         public static void RelocateObjectForPhysics(WorldObject worldObject, bool adjacencyMove)
         {
             var oldBlock = worldObject.CurrentLandblock;
-            var newBlock = GetLandblock(worldObject.Location.LandblockId, true);
+            var newBlock = GetLandblock(worldObject.Location.LandblockId, worldObject.Location.Instance, null, true);
 
             if (newBlock.IsDormant && worldObject is SpellProjectile)
             {
@@ -391,39 +392,51 @@ namespace ACE.Server.Managers
             newBlock.AddWorldObjectForPhysics(worldObject);
         }
 
-        public static bool IsLoaded(LandblockId landblockId)
+        public static bool IsLoaded(LandblockId landblockId, uint instance)
         {
-            lock (landblockMutex)
-                return landblocks[landblockId.LandblockX, landblockId.LandblockY] != null;
+            return LandblockDictFetch(landblockId.Raw, instance) != null;
+        }
+
+        public static Landblock GetLandblockUnsafe(LandblockId landblockId, uint instance)
+        {
+            return LandblockDictFetch(landblockId.Raw, instance);
         }
 
         /// <summary>
         /// Returns a reference to a landblock, loading the landblock if not already active
         /// </summary>
-        public static Landblock GetLandblock(LandblockId landblockId, bool loadAdjacents, bool permaload = false)
+        public static Landblock GetLandblock(LandblockId landblockId, uint instance, EphemeralRealm ephemeralRealm, bool loadAdjacents, bool permaload = false)
         {
-            Landblock landblock;
+            if (loadAdjacents && ephemeralRealm != null)
+            {
+                throw new ArgumentException("Ephemeral Realms may not be used with load adjacents (suggestion: use indoor areas only)");
+            }
 
+            Landblock landblock;
+            
             lock (landblockMutex)
             {
                 bool setAdjacents = false;
 
-                landblock = landblocks[landblockId.LandblockX, landblockId.LandblockY];
+                var landblockIdClean = new LandblockId(landblockId.Raw | 0xFFFF);
 
+                landblock = LandblockDictFetch(landblockIdClean.Raw, instance);
+                
                 if (landblock == null)
                 {
                     // load up this landblock
-                    landblock = landblocks[landblockId.LandblockX, landblockId.LandblockY] = new Landblock(landblockId);
+                    landblock = new Landblock(landblockIdClean, instance);
+                    LandblockDictCommit(landblockIdClean.Raw, instance, landblock);
 
                     if (!loadedLandblocks.Add(landblock))
                     {
-                        log.Error($"LandblockManager: failed to add {landblock.Id.Raw:X8} to active landblocks!");
+                        log.Error($"LandblockManager: failed to add {LandblockKey(landblockIdClean.Raw, instance):X8} to active landblocks!");
                         return landblock;
                     }
 
                     landblockGroupPendingAdditions.Add(landblock);
 
-                    landblock.Init();
+                    landblock.Init(ephemeralRealm);
 
                     // Workaround for apartment chest contents not showing up on first landblock load.
                     // TODO: find the issue and fix it.
@@ -435,8 +448,9 @@ namespace ACE.Server.Managers
                         actionChain.AddAction(landblock, () =>
                         {
                             landblock.DestroyAllNonPlayerObjects();
-                            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock.Id.Landblock);
-                            landblock.Init(true);
+                            ParseInstanceID(instance, out _, out ushort realmId, out _);
+                            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock.Id.Landblock, realmId);
+                            landblock.Init(ephemeralRealm, true);
                         });
                         actionChain.EnqueueChain();
                     }
@@ -452,7 +466,7 @@ namespace ACE.Server.Managers
                 {
                     var adjacents = GetAdjacentIDs(landblock);
                     foreach (var adjacent in adjacents)
-                        GetLandblock(adjacent, false, permaload);
+                        GetLandblock(adjacent, instance, null, false, permaload);
 
                     setAdjacents = true;
                 }
@@ -460,6 +474,9 @@ namespace ACE.Server.Managers
                 // cache adjacencies
                 if (setAdjacents)
                     SetAdjacents(landblock, true, true);
+
+                if (pendingInstanceIds.Contains(instance))
+                    pendingInstanceIds.Remove(instance);
             }
 
             return landblock;
@@ -485,7 +502,7 @@ namespace ACE.Server.Managers
 
             foreach (var adjacentID in adjacentIDs)
             {
-                var adjacent = landblocks[adjacentID.LandblockX, adjacentID.LandblockY];
+                var adjacent = LandblockDictFetch(adjacentID.Raw, landblock.Instance);
                 if (adjacent != null)
                     adjacents.Add(adjacent);
             }
@@ -624,7 +641,7 @@ namespace ACE.Server.Managers
                         // remove from list of managed landblocks
                         if (loadedLandblocks.Remove(landblock))
                         {
-                            landblocks[landblock.Id.LandblockX, landblock.Id.LandblockY] = null;
+                            LandblockDictCommit(landblock.Id.Raw, landblock.Instance, null);
 
                             // remove from landblock group
                             for (int i = landblockGroups.Count - 1; i >= 0 ; i--)
@@ -734,6 +751,70 @@ namespace ACE.Server.Managers
                 else
                     SendGlobalEnvironSound(environChangeType);
             }
+        }
+        public static uint RequestNewInstanceID(bool isTemporaryRuleset, ushort realmId, LandblockId landblock)
+        {
+            lock (landblockMutex)
+            {
+                uint iid;
+                do
+                {
+                    iid = GetRandomInstanceID(isTemporaryRuleset, realmId);
+                }
+                while (LandblockDictFetch(landblock.Raw, iid) != null || pendingInstanceIds.Contains(iid));
+                pendingInstanceIds.Add(iid);
+                return iid;
+            }
+        }
+
+        static Random random = new Random();
+        private static uint GetRandomInstanceID(bool isTemporaryRuleset, ushort realmId)
+        {
+            ushort left = realmId;
+            if ((realmId & 0x8000) != 0)
+                throw new InvalidOperationException("Realm IDs may not be higher than 0x7FFF");
+            if (isTemporaryRuleset)
+                left |= 0x8000;
+            var id = (ushort)random.Next(1, 0xFFFE);
+            uint result = (((uint)left) << 16) | id;
+            return result;
+        }
+
+        public static void ParseInstanceID(uint instanceId, out bool isTemporaryRuleset, out ushort realmId, out ushort shortInstanceId)
+        {
+            shortInstanceId = (ushort)(instanceId & 0xFFFF);
+            ushort left = (ushort)(instanceId >> 16);
+            isTemporaryRuleset = (left & 0x8000) == 0x8000;
+            realmId = (ushort)(left & 0x7FFF);
+        }
+
+        private static ulong LandblockKey(uint rawLandblockId, uint instance)
+        {
+            return ((ulong)instance << 32) | (rawLandblockId | 0xFFFF);
+        }
+
+        private static Landblock LandblockDictFetch(uint rawLandblockId, uint instance)
+        {
+            ulong key = LandblockKey(rawLandblockId, instance);
+            Landblock lb = null;
+            landblocks.TryGetValue(key, out lb);
+            return lb;
+        }
+
+        private static void LandblockDictCommit(uint rawLandblockId, uint instance, Landblock landblock)
+        {
+            ulong key = LandblockKey(rawLandblockId, instance);
+
+            var curr = LandblockDictFetch(rawLandblockId, instance);
+            if (landblock != null && curr != null)
+                throw new InvalidOperationException("Attempted to overwrite live landblock (possible thread safety issue)");
+            if (landblock == null && curr == null)
+                throw new InvalidOperationException("Attempted to clear unloaded landblock (possible thread safety issue)");
+
+            if (landblock == null)
+                landblocks.Remove(key);
+            else
+                landblocks[key] = landblock;
         }
     }
 }

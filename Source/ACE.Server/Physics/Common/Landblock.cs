@@ -33,6 +33,8 @@ namespace ACE.Server.Physics.Common
         public List<PhysicsObj> Scenery;
         public List<PhysicsObj> ServerObjects { get; set; }
 
+        public uint Instance;
+
         public static bool UseSceneFiles = true;
 
         public Landblock() : base()
@@ -40,7 +42,7 @@ namespace ACE.Server.Physics.Common
             Init();
         }
 
-        public Landblock(CellLandblock landblock)
+        public Landblock(CellLandblock landblock, uint instance)
             : base(landblock)
         {
             Init();
@@ -53,6 +55,8 @@ namespace ACE.Server.Physics.Common
             BlockCoord = LandDefs.blockid_to_lcoord(landblock.Id).Value;
             _landblock = landblock;
             get_land_limits();
+
+            Instance = instance;
         }
 
         public new void Init()
@@ -145,7 +149,7 @@ namespace ACE.Server.Physics.Common
             var cellY = (int)point.Y / 24;
 
             var blockCellID = (ID & 0xFFFF0000) | (uint)(cellX * 8 + cellY) + 1;
-            return (LandCell)LScape.get_landcell((uint)blockCellID);
+            return (LandCell)LScape.get_landcell((uint)blockCellID, Instance);
         }
 
         public void destroy_buildings()
@@ -476,6 +480,16 @@ namespace ACE.Server.Physics.Common
 
         public void init_landcell()
         {
+            // REALMS-TODO: Merge conflict here - Old code:
+            /*
+            var lbid = ID & 0xFFFF0000;
+            for (uint i = 1; i <= 64; i++)
+            {
+                var landcell = LScape.get_landcell(lbid | i, Instance);
+                landcell.CurLandblock = this;
+            }
+            */
+
             // should be length SideCellCount ^ 2
             foreach (var landCell in LandCells.Values)
                 landCell.CurLandblock = this;
@@ -690,7 +704,7 @@ namespace ACE.Server.Physics.Common
             var cellID = startCell;
             for (var i = 0; i < Info.NumCells; i++)
             {
-                var envCell = (EnvCell)LScape.get_landcell(cellID++);
+                var envCell = (EnvCell)LScape.get_landcell(cellID++, Instance);
                 if (envCell != null)
                     envcells.Add(envCell);
                 else

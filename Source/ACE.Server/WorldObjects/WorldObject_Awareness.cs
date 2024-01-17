@@ -63,7 +63,7 @@ namespace ACE.Server.WorldObjects
             var isDungeon = CurrentLandblock.PhysicsLandblock != null && CurrentLandblock.PhysicsLandblock.IsDungeon;
             foreach (var player in PhysicsObj.ObjMaint.GetKnownPlayersValuesAsPlayer())
             {
-                if (isDungeon && Location.Landblock != player.Location.Landblock)
+                if (isDungeon && Location.LandblockId.Landblock != player.Location.LandblockId.Landblock)
                     continue;
 
                 var distSquared = Location.SquaredDistanceTo(player.Location);

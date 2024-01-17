@@ -116,6 +116,7 @@ namespace ACE.Database.Adapter
                     existingValue.AnglesX = kvp.Value.RotationX;
                     existingValue.AnglesY = kvp.Value.RotationY;
                     existingValue.AnglesZ = kvp.Value.RotationZ;
+                    existingValue.Instance = kvp.Value.Instance;
 
                     // Entity Framework is unable to store NaN floats in the database and results in an error of:
                     // ERROR 1054: Unknown column 'NaN' in 'field list'

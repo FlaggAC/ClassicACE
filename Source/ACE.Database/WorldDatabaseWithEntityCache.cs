@@ -593,13 +593,15 @@ namespace ACE.Database
         /// <summary>
         /// Clears the cached landblock instances for a specific landblock
         /// </summary>
-        public bool ClearCachedInstancesByLandblock(ushort landblock)
+        public bool ClearCachedInstancesByLandblock(ushort landblock, ushort realmId)
         {
             return cachedLandblockInstances.TryRemove(landblock, out _);
         }
 
-        public List<LandblockInstance> GetCachedInstancesByLandblock(WorldDbContext context, ushort landblock)
+        public List<LandblockInstance> GetCachedInstancesByLandblock(WorldDbContext context, ushort landblock, ushort realmId)
         {
+            // ACRealms TODO: Support realms in spawn map
+
             if (cachedLandblockInstances.TryGetValue(landblock, out var value))
                 return value;
 
@@ -617,10 +619,10 @@ namespace ACE.Database
         /// <summary>
         /// Returns statics spawn map and their links for the landblock
         /// </summary>
-        public List<LandblockInstance> GetCachedInstancesByLandblock(ushort landblock)
+        public List<LandblockInstance> GetCachedInstancesByLandblock(ushort landblock, ushort realmId)
         {
             using (var context = new WorldDbContext())
-                return GetCachedInstancesByLandblock(context, landblock);
+                return GetCachedInstancesByLandblock(context, landblock, realmId);
         }
 
 
@@ -1119,6 +1121,54 @@ namespace ACE.Database
 
                 cachedWieldedTreasure[dataId] = results;
                 return results;
+            }
+        }
+
+        // =====================================
+        // Realm
+        // =====================================
+
+        private readonly Dictionary<uint, Realm> realmCache = new Dictionary<uint, Realm>();
+
+        public override Realm GetRealm(uint realmId)
+        {
+            Realm realm;
+
+            lock (realmCache)
+            {
+                if (!realmCache.TryGetValue(realmId, out realm))
+                {
+                    realm = base.GetRealm(realmId);
+                    realmCache.Add(realmId, realm);
+                }
+            }
+
+            return realm;
+        }
+
+        public override List<Realm> GetAllRealms()
+        {
+            lock (realmCache)
+            {
+                ClearRealmCache();
+                var realms = base.GetAllRealms();
+                foreach(var realm in realms)
+                    realmCache[realm.Id] = realm;
+                return realms;
+            }
+        }
+        public void ClearRealmCache()
+        {
+            lock (realmCache)
+                realmCache.Clear();
+        }
+
+        public override void ReplaceAllRealms(Dictionary<ushort, RealmToImport> realmsById)
+        {
+            lock (realmCache)
+            {
+                base.ReplaceAllRealms(realmsById);
+                ClearRealmCache();
             }
         }
 

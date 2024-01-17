@@ -31,6 +31,7 @@ using ACE.Server.WorldObjects.Managers;
 using Landblock = ACE.Server.Entity.Landblock;
 using Position = ACE.Entity.Position;
 using ACE.Server.Factories;
+using ACE.Server.Realms;
 
 namespace ACE.Server.WorldObjects
 {
@@ -70,6 +71,7 @@ namespace ACE.Server.WorldObjects
         /// Should only be adjusted by Landblock -- default is null
         /// </summary>
         public Landblock CurrentLandblock { get; internal set; }
+        public AppliedRuleset RealmRuleset => CurrentLandblock?.RealmRuleset;
 
         public bool IsBusy { get; set; }
         public bool IsShield { get => CombatUse != null && CombatUse == ACE.Entity.Enum.CombatUse.Shield; }
@@ -116,7 +118,7 @@ namespace ACE.Server.WorldObjects
         protected WorldObject(Weenie weenie, ObjectGuid guid)
         {
             Weenie = weenie;
-            Biota = ACE.Entity.Adapter.WeenieConverter.ConvertToBiota(weenie, guid.Full, false, true);
+            Biota = ACE.Entity.Adapter.WeenieConverter.ConvertToBiota(weenie, guid.Full, false, weenie.CanReferenceCommonProperties);
             Guid = guid;
 
             InitializePropertyDictionaries();
@@ -212,7 +214,7 @@ namespace ACE.Server.WorldObjects
             // exclude linkspots from spawning
             if (WeenieClassId == 10762) return true;
 
-            var cell = LScape.get_landcell(Location.Cell);
+            var cell = LScape.get_landcell(Location.Cell, Location.Instance);
             if (cell == null)
             {
                 PhysicsObj.DestroyObject();
@@ -227,7 +229,7 @@ namespace ACE.Server.WorldObjects
             location.Frame.Origin = Location.Pos;
             location.Frame.Orientation = Location.Rotation;
 
-            var success = PhysicsObj.enter_world(location);
+            var success = PhysicsObj.enter_world(location, Location.Instance);
 
             if (!success || PhysicsObj.CurCell == null)
             {
@@ -749,6 +751,9 @@ namespace ACE.Server.WorldObjects
             if (Location == null)
                 return false;
 
+            if (Generator != null)
+                Location.Instance = Generator.Location.Instance;
+
             if (!LandblockManager.AddObject(this))
                 return false;
 
@@ -775,12 +780,12 @@ namespace ACE.Server.WorldObjects
         {
             if (pos == null) return false;
 
-            var landblock = LScape.get_landblock(pos.Cell);
+            var landblock = LScape.get_landblock(pos.Cell, pos.Instance);
             if (landblock == null || !landblock.HasDungeon) return false;
 
             var dungeonID = pos.Cell >> 16;
 
-            var adjustCell = AdjustCell.Get(dungeonID);
+            var adjustCell = AdjustCell.Get(dungeonID, pos.Instance);
             var cellID = adjustCell.GetCell(pos.Pos);
 
             if (cellID != null && pos.Cell != cellID.Value)
@@ -796,7 +801,7 @@ namespace ACE.Server.WorldObjects
         {
             if (pos == null) return false;
 
-            var landblock = LScape.get_landblock(pos.Cell);
+            var landblock = LScape.get_landblock(pos.Cell, pos.Instance);
             if (landblock == null || !landblock.HasDungeon) return false;
 
             var dungeonID = pos.Cell >> 16;
@@ -1182,10 +1187,10 @@ namespace ACE.Server.WorldObjects
         public double GetHighestTierAroundObject(float maxDistance)
         {
             double? maxTier = null;
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(CurrentLandblock.Id.Landblock);
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(CurrentLandblock.Id.Landblock, Location.RealmID);
             foreach (var instance in instances)
             {
-                Position instancePos = new Position(instance.ObjCellId, instance.OriginX, instance.OriginY, instance.OriginZ, instance.AnglesX, instance.AnglesY, instance.AnglesZ, instance.AnglesW);
+                Position instancePos = new Position(instance.ObjCellId, instance.OriginX, instance.OriginY, instance.OriginZ, instance.AnglesX, instance.AnglesY, instance.AnglesZ, instance.AnglesW, Location.Instance);
                 if (Location.DistanceTo(instancePos) < maxDistance)
                 {
                     var weenie = DatabaseManager.World.GetCachedWeenie(instance.WeenieClassId);
@@ -1225,7 +1230,7 @@ namespace ACE.Server.WorldObjects
                 pos.adjust_to_outside();
                 pos.Frame.Origin.Z = CurrentLandblock.PhysicsLandblock.GetZ(pos.Frame.Origin);
 
-                Position encounterPos = new Position(pos.ObjCellID, pos.Frame.Origin, pos.Frame.Orientation);
+                Position encounterPos = new Position(pos.ObjCellID, pos.Frame.Origin, pos.Frame.Orientation, Location.Instance);
                 if (Location.DistanceTo(encounterPos) < maxDistance)
                 {
                     var weenie = DatabaseManager.World.GetCachedWeenie(encounter.WeenieClassId);

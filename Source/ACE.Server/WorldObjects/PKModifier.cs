@@ -66,7 +66,7 @@ namespace ACE.Server.WorldObjects
                 return new ActivationResult(false);
             }
 
-            if (player.PkLevel > PKLevel.PK || PropertyManager.GetBool("pk_server").Item || PropertyManager.GetBool("pkl_server").Item)
+            if (player.PkLevel > PKLevel.PK || player.RealmRuleset.GetProperty(RealmPropertyBool.IsPKOnly) || PropertyManager.GetBool("pkl_server").Item)
             {
                 if (!string.IsNullOrWhiteSpace(GetProperty(PropertyString.UsePkServerError)))
                     player.Session.Network.EnqueueSend(new GameMessageSystemChat(GetProperty(PropertyString.UsePkServerError), ChatMessageType.Broadcast));
@@ -271,29 +271,29 @@ namespace ACE.Server.WorldObjects
                 {
                     case 1:
                         if (ThreadSafeRandom.Next(0, 1) == 1)
-                            player.Location = new Position(0xD6550023, 108.765625f, 62.215103f, 52.005001f, 0.000000f, 0.000000f, -0.300088f, 0.953912f); // Shoushi West
+                            player.Location = new Position(0xD6550023, 108.765625f, 62.215103f, 52.005001f, 0.000000f, 0.000000f, -0.300088f, 0.953912f, 0); // Shoushi West
                         else
-                            player.Location = new Position(0xDE51001D, 85.017159f, 107.291908f, 15.861228f, 0.000000f, 0.000000f, 0.323746f, 0.946144f); // Shoushi Southeast
+                            player.Location = new Position(0xDE51001D, 85.017159f, 107.291908f, 15.861228f, 0.000000f, 0.000000f, 0.323746f, 0.946144f, 0); // Shoushi Southeast
                         break;
                     case 2:
                         if (ThreadSafeRandom.Next(0, 1) == 1)
-                            player.Location = new Position(0x7D680012, 65.508179f, 37.516647f, 16.257774f, 0.000000f, 0.000000f, -0.950714f, 0.310069f); // Yaraq North
+                            player.Location = new Position(0x7D680012, 65.508179f, 37.516647f, 16.257774f, 0.000000f, 0.000000f, -0.950714f, 0.310069f, 0); // Yaraq North
                         else
-                            player.Location = new Position(0x8164000D, 40.296101f, 107.638382f, 31.363008f, 0.000000f, 0.000000f, -0.699884f, -0.714257f); //Yaraq East
+                            player.Location = new Position(0x8164000D, 40.296101f, 107.638382f, 31.363008f, 0.000000f, 0.000000f, -0.699884f, -0.714257f, 0); //Yaraq East
                         break;
                     case 3:
                     default:
                         if (ThreadSafeRandom.Next(0, 1) == 1)
-                            player.Location = new Position(0xA5B4002A, 131.134338f, 33.602352f, 53.077141f, 0.000000f, 0.000000f, -0.263666f, 0.964614f); // Holtburg West
+                            player.Location = new Position(0xA5B4002A, 131.134338f, 33.602352f, 53.077141f, 0.000000f, 0.000000f, -0.263666f, 0.964614f, 0); // Holtburg West
                         else
-                            player.Location = new Position(0xA9B00015, 60.108139f, 103.333549f, 64.402885f, 0.000000f, 0.000000f, -0.381155f, -0.924511f); // Holtburg South
+                            player.Location = new Position(0xA9B00015, 60.108139f, 103.333549f, 64.402885f, 0.000000f, 0.000000f, -0.381155f, -0.924511f, 0); // Holtburg South
                         break;
                 }
 
                 player.Instantiation = new Position(player.Location);
                 player.Sanctuary = new Position(player.Location);
 
-                WorldManager.ThreadSafeTeleport(player, player.Instantiation);
+                WorldManager.ThreadSafeTeleport(player, player.Instantiation, false);
 
                 player.CheckMultipleAccounts();
             }

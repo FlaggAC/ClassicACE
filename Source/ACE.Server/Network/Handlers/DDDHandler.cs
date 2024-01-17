@@ -238,7 +238,7 @@ namespace ACE.Server.Network.Handlers
                     else
                     {
                         // send to lifestone, or fallback location
-                        var fixLoc = session.Player.Sanctuary ?? new Position(0xA9B40019, 84, 7.1f, 94, 0, 0, -0.0784591f, 0.996917f);
+                        var fixLoc = session.Player.Sanctuary ?? new Position(0xA9B40019, 84, 7.1f, 94, 0, 0, -0.0784591f, 0.996917f, session.Player.Location.Instance);
 
                         log.Error($"DDD_RequestDataMessage received for {session.Player.Name}, relocating to {fixLoc.ToLOCString()}");
 

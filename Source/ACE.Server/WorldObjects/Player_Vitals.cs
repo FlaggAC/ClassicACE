@@ -110,6 +110,9 @@ namespace ACE.Server.WorldObjects
                 amountRemaining = (uint)AvailableExperience;
 
             SpendVitalXp(creatureVital, amountRemaining, sendNetworkUpdate);
+            creatureVital.Current = creatureVital.MaxValue;
+            if (sendNetworkUpdate)
+                Session.Network.EnqueueSend(new GameMessagePrivateUpdateVital(this, creatureVital));
         }
 
         public override void SetMaxVitals()

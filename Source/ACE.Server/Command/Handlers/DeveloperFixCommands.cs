@@ -2355,7 +2355,7 @@ namespace ACE.Server.Command.Handlers
 
                                 if (rare.Value.Location != null)
                                 {
-                                    wo.Location = new ACE.Entity.Position(rare.Value.Location.ObjCellId, rare.Value.Location.OriginX, rare.Value.Location.OriginY, rare.Value.Location.OriginZ, rare.Value.Location.AnglesX, rare.Value.Location.AnglesY, rare.Value.Location.AnglesZ, rare.Value.Location.AnglesW);
+                                    wo.Location = new ACE.Entity.Position(rare.Value.Location.ObjCellId, rare.Value.Location.OriginX, rare.Value.Location.OriginY, rare.Value.Location.OriginZ, rare.Value.Location.AnglesX, rare.Value.Location.AnglesY, rare.Value.Location.AnglesZ, rare.Value.Location.AnglesW, rare.Value.Location.Instance ?? 0);
                                 }
 
                                 if (rare.Value.Shortcut != null)
@@ -2719,7 +2719,7 @@ namespace ACE.Server.Command.Handlers
 
                             if (coin.Value.Location != null)
                             {
-                                wo.Location = new ACE.Entity.Position(coin.Value.Location.ObjCellId, coin.Value.Location.OriginX, coin.Value.Location.OriginY, coin.Value.Location.OriginZ, coin.Value.Location.AnglesX, coin.Value.Location.AnglesY, coin.Value.Location.AnglesZ, coin.Value.Location.AnglesW);
+                                wo.Location = new ACE.Entity.Position(coin.Value.Location.ObjCellId, coin.Value.Location.OriginX, coin.Value.Location.OriginY, coin.Value.Location.OriginZ, coin.Value.Location.AnglesX, coin.Value.Location.AnglesY, coin.Value.Location.AnglesZ, coin.Value.Location.AnglesW, coin.Value.Location.Instance ?? 0);
                             }
 
                             if (coin.Value.Shortcut != null)

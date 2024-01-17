@@ -24,11 +24,15 @@ using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Text.RegularExpressions;
+using ACE.Database.Models.Shard;
+using log4net;
+using ACE.Database.Adapter;
 
 namespace ACE.Server.Command.Handlers.Processors
 {
-    public class DeveloperContentCommands
+    public partial class DeveloperContentCommands
     {
+        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         public enum FileType
         {
             Undefined,
@@ -38,6 +42,7 @@ namespace ACE.Server.Command.Handlers.Processors
             Recipe,
             Spell,
             Weenie,
+            Realm
         }
 
         public static FileType GetContentType(string[] parameters, ref string param)
@@ -62,6 +67,8 @@ namespace ACE.Server.Command.Handlers.Processors
                     return FileType.Spell;
                 else if (fileType.StartsWith("encounter"))
                     return FileType.Encounter;
+                else if (fileType.StartsWith("realm"))
+                    return FileType.Realm;
             }
             return FileType.Undefined;
         }
@@ -99,6 +106,145 @@ namespace ACE.Server.Command.Handlers.Processors
                 case FileType.Weenie:
                     ImportJsonWeenie(session, param);
                     break;
+
+                case FileType.Realm:
+                    //ImportJsonRealm(session, param);
+                    return;
+            }
+        }
+
+        [CommandHandler("import-realms", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Imports all json realms from the Content folder")]
+        public static void HandleImportRealms(Session session, params string[] parameters)
+        {
+            DateTime now = DateTime.Now;
+            DirectoryInfo di = VerifyContentFolder(session);
+            if (!di.Exists) return;
+
+            var sep = Path.DirectorySeparatorChar;
+
+            var realms_index = $"{di.FullName}{sep}json{sep}realms.jsonc";
+            var json_folder = $"{di.FullName}{sep}json{sep}realms{sep}";
+
+            var realms = ImportJsonRealmsFolder(session, json_folder);
+            if (realms != null)
+                ImportJsonRealmsIndex(session, realms_index, realms);
+
+            session?.Network.EnqueueSend(new GameMessageSystemChat($"Synced {realms.Count} realms in {(DateTime.Now - now)}.", ChatMessageType.Broadcast));
+        }
+
+        private static List<RealmToImport> ImportJsonRealmsFromSubFolder(Session session, string json_folder)
+        {
+            var di = new DirectoryInfo(json_folder);
+
+            var files = di.Exists ? di.GetFiles($"*.jsonc") : null;
+
+            if (files == null)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find {json_folder}*.jsonc");
+                return null;
+            }
+
+            List<RealmToImport> list = new List<RealmToImport>();
+            foreach(var file in files)
+            {
+                var jsondata = File.ReadAllText(file.FullName);
+                var realmToImport = RealmManager.DeserializeRealmJson(session, file.FullName, jsondata);
+                if (realmToImport == null)
+                    return null;
+                list.Add(realmToImport);
+            }
+            return list;
+        }
+
+        
+
+        private static List<RealmToImport> ImportJsonRealmsFolder(Session session, string json_folder)
+        {
+            var sep = Path.DirectorySeparatorChar;
+            var json_folder_realm = $"{json_folder}{sep}realm{sep}";
+            var json_folder_ruleset = $"{json_folder}{sep}ruleset{sep}";
+
+            var list = ImportJsonRealmsFromSubFolder(session, json_folder_realm).ToList();
+            if (list == null)
+                return null;
+
+            var list2 = ImportJsonRealmsFromSubFolder(session, json_folder_ruleset);
+            if (list2 != null)
+            {
+                list.AddRange(list2);
+                return list;
+            }
+            return null;
+        }
+
+        private static void ImportJsonRealmsIndex(Session session, string realmsIndexJsonFile, List<RealmToImport> realms)
+        {
+            Dictionary<string, RealmToImport> realmsDict = null;
+            Dictionary<ushort, RealmToImport> realmsById = new Dictionary<ushort, RealmToImport>();
+            try
+            {
+                realmsDict = realms.ToDictionary(x => x.Realm.Name);
+            }
+            catch
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't create realms dictionary. Is there a problem with a realm name?");
+                return;
+            }
+
+            Dictionary<string, ushort> result = null;
+            try
+            {
+                var fileText = File.ReadAllText(realmsIndexJsonFile);
+                result = JsonConvert.DeserializeObject<Dictionary<string, ushort>>(fileText);
+
+                //Map ids
+                foreach (var item in result)
+                {
+                    var importItem = realmsDict[item.Key];
+                    importItem.Realm.SetId(item.Value);
+                    realmsById.Add(item.Value, importItem);
+                }
+
+                //Map parents
+                foreach(var item in result)
+                {
+                    var importItem = realmsDict[item.Key];
+                    if (importItem.Realm.ParentRealmName != null)
+                    {
+                        if (!realmsDict.TryGetValue(importItem.Realm.ParentRealmName, out var parentImportItem))
+                            throw new Exception($"Couldn't find parent realm with name {importItem.Realm.ParentRealmName}");
+                        importItem.Realm.ParentRealmId = parentImportItem.Realm.Id;
+                    }
+                }
+
+                //Map descendents
+                foreach (var item in result)
+                {
+                    var importItem = realmsDict[item.Key];
+                    if (importItem.Realm.ParentRealmId == null)
+                        continue;
+
+                    var parentImportItem = realmsById[importItem.Realm.ParentRealmId.Value];
+                    parentImportItem.Realm.Descendents.Add(importItem.Realm.Id, importItem.Realm);
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Couldn't import {realmsIndexJsonFile}", ex);
+                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't import {realmsIndexJsonFile}");
+                return;
+            }
+
+            try
+            {
+                RealmManager.FullUpdateRealmsRepository(realmsDict, realmsById);
+                Console.WriteLine($"Imported {realmsById.Count} realms.");
+            }
+            catch
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Failed to update realms repository.");
+                log.Error($"Failed to update realms repository.");
+                return;
             }
         }
 
@@ -488,8 +634,12 @@ namespace ACE.Server.Command.Handlers.Processors
                         break;
 
                     case FileType.Weenie:
-                        ImportSQLWeenie(session, param);
+                        ImportSQLWeenieWrapped(session, param, parameters.Length >= 3 ? parameters[2] : "");
                         break;
+
+                    /*case FileType.Realm:
+                        ImportSQLRealm(session, param);
+                        break;*/
                 }
             }
             catch(Exception e)
@@ -555,6 +705,34 @@ namespace ACE.Server.Command.Handlers.Processors
 
             foreach (var file in files)
                 ImportSQLRecipe(session, sql_folder, file.Name);
+        }
+
+        public static void ImportSQLRealm(Session session, string realmId)
+        {
+            DirectoryInfo di = VerifyContentFolder(session);
+            if (!di.Exists) return;
+
+            var sep = Path.DirectorySeparatorChar;
+
+            var sql_folder = $"{di.FullName}{sep}sql{sep}realms{sep}";
+
+            var prefix = realmId + " ";
+
+            if (realmId.Equals("all", StringComparison.OrdinalIgnoreCase))
+                prefix = "";
+
+            di = new DirectoryInfo(sql_folder);
+
+            var files = di.Exists ? di.GetFiles($"{prefix}*.sql") : null;
+
+            if (files == null || files.Length == 0)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find {sql_folder}{prefix}*.sql");
+                return;
+            }
+
+            foreach (var file in files)
+                ImportSQLRealm(session, sql_folder, file.Name);
         }
 
         public static void ImportSQLLandblock(Session session, string landblockId)
@@ -756,7 +934,7 @@ namespace ACE.Server.Command.Handlers.Processors
             CommandHandlerHelper.WriteOutputInfo(session, $"Imported {sqlFile}");
 
             // clear any cached instances for this landblock
-            DatabaseManager.World.ClearCachedInstancesByLandblock(landblockId);
+            DatabaseManager.World.ClearCachedInstancesByLandblock(landblockId, 0);
         }
 
         private static void ConvertJsonLandblock(Session session, string json_folder, string json_file)
@@ -884,6 +1062,7 @@ namespace ACE.Server.Command.Handlers.Processors
         public static CookBookSQLWriter CookBookSQLWriter;
         public static RecipeSQLWriter RecipeSQLWriter;
         public static SpellSQLWriter SpellSQLWriter;
+        public static RealmSQLWriter RealmSQLWriter;
 
         public static string json2sql_recipe(Session session, string folder, string json_filename)
         {
@@ -1187,6 +1366,28 @@ namespace ACE.Server.Command.Handlers.Processors
             //sql2json_recipe(session, cookbooks, sql_folder, sql_file);
         }
 
+        private static void ImportSQLRealm(Session session, string sql_folder, string sql_file)
+        {
+            if (!uint.TryParse(Regex.Match(sql_file, @"\d+").Value, out var realmId))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find realm id from {sql_file}");
+                return;
+            }
+
+            ImportSQL(sql_folder + sql_file);
+            CommandHandlerHelper.WriteOutputInfo(session, $"Imported {sql_file}");
+
+            RealmManager.ClearCache();
+
+            var realm = DatabaseManager.World.GetRealm(realmId);
+
+            if (realm == null)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't load realm {realmId} from db");
+                return;
+            }
+        }
+
         private static void ImportSQLLandblock(Session session, string sql_folder, string sql_file)
         {
             if (!ushort.TryParse(Regex.Match(sql_file, @"[0-9A-F]{4}", RegexOptions.IgnoreCase).Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var landblockId))
@@ -1200,10 +1401,10 @@ namespace ACE.Server.Command.Handlers.Processors
             CommandHandlerHelper.WriteOutputInfo(session, $"Imported {sql_file}");
 
             // clear any cached instances for this landblock
-            DatabaseManager.World.ClearCachedInstancesByLandblock(landblockId);
+            DatabaseManager.World.ClearCachedInstancesByLandblock(landblockId, 0);
 
             // load landblock instances from database
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblockId);
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblockId, 0);
 
             // convert to json file
             //sql2json_landblock(session, instances, sql_folder, sql_file);
@@ -1392,6 +1593,17 @@ namespace ACE.Server.Command.Handlers.Processors
                 ctx.Database.ExecuteSqlRaw(sqlCommands);
         }
 
+        /// <summary>
+        /// Imports an SQL file into the database
+        /// </summary>
+        public static void ImportSQLShard(string sqlFile)
+        {
+            var sqlCommands = File.ReadAllText(sqlFile);
+
+            using (var ctx = new ShardDbContext())
+                ctx.Database.ExecuteSqlRaw(sqlCommands);
+        }
+
         public static LandblockInstanceWriter LandblockInstanceWriter;
 
         [CommandHandler("replaceinst", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Replaces the last appraised object from the current landblock instances with a new wcid or classname", "<wcid or classname>")]
@@ -1425,8 +1637,9 @@ namespace ACE.Server.Command.Handlers.Processors
                 }
             }
 
-            var landblock = (ushort)obj.Location.Landblock;
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock);
+            var landblock = (ushort)obj.Location.LandblockId.Landblock;
+            var realmId = obj.RealmRuleset.Realm.Id;
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock, realmId);
 
             var instance = instances.FirstOrDefault(i => i.Guid == objGuid);
 
@@ -1436,7 +1649,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 return;
             }
 
-            var location = new Position(instance.ObjCellId, instance.OriginX, instance.OriginY, instance.OriginZ, instance.AnglesX, instance.AnglesY, instance.AnglesZ, instance.AnglesW);
+            var location = new Position(instance.ObjCellId, instance.OriginX, instance.OriginY, instance.OriginZ, instance.AnglesX, instance.AnglesY, instance.AnglesZ, instance.AnglesW, 0);
 
             LandblockInstanceLink link = null;
             if (instance.IsLinkChild)
@@ -1566,9 +1779,9 @@ namespace ACE.Server.Command.Handlers.Processors
             var landblock = loc.LandblockId.Landblock;
 
             // clear any cached instances for this landblock
-            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock);
+            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock, 0);
 
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock);
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock, 0);
 
             // for link mode, ensure parent guid instance exists
             WorldObject parentObj = null;
@@ -1739,7 +1952,7 @@ namespace ACE.Server.Command.Handlers.Processors
             }
 
             // clear landblock instances for this landblock (again)
-            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock);
+            DatabaseManager.World.ClearCachedInstancesByLandblock(landblock, 0);
         }
 
         public static LandblockInstance CreateLandblockInstanceObj(WorldObject wo, bool isLinkChild = false)
@@ -1748,7 +1961,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
             instance.Guid = wo.Guid.Full;
 
-            instance.Landblock = (int)wo.Location.Landblock;
+            instance.Landblock = (int)wo.Location.LandblockShort;
 
             instance.WeenieClassId = wo.WeenieClassId;
 
@@ -1816,7 +2029,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
             if (wo?.Location == null) return;
 
-            var landblock = (ushort)wo.Location.Landblock;
+            var landblock = (ushort)wo.Location.LandblockShort;
 
             // if generator child, try getting the "real" guid
             var guid = wo.Guid.Full;
@@ -1827,7 +2040,7 @@ namespace ACE.Server.Command.Handlers.Processors
                     guid = staticGuid.Value;
             }
 
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock);
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock, 0);
 
             var instance = instances.FirstOrDefault(i => i.Guid == guid);
 
@@ -1942,14 +2155,14 @@ namespace ACE.Server.Command.Handlers.Processors
                 return;
             }
 
-            var landblock = (ushort)pos.Landblock;
+            var landblock = (ushort)pos.LandblockId.Landblock;
             // clear any cached encounters for this landblock so we get the unmodified entries
             DatabaseManager.World.ClearCachedEncountersByLandblock(landblock);
 
             // get existing encounters for this landblock
             var encounters = DatabaseManager.World.GetCachedEncountersByLandblock(landblock, out _);
 
-            session.Network.EnqueueSend(new GameMessageSystemChat($"--- Landblock 0x{pos.Landblock:X4}: {encounters.Count} Encounters Found ---", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"--- Landblock 0x{pos.LandblockId.Landblock:X4}: {encounters.Count} Encounters Found ---", ChatMessageType.Broadcast));
             int counter = 1;
             foreach (var entry in encounters)
             {
@@ -2019,7 +2232,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 }
             }
 
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Replacing entries of encounter {weenieSource.ClassId}({weenieSource.WeeniePropertiesString.FirstOrDefault(i => i.Type == (int)PropertyString.Name)?.Value}) for {weenieTarget.ClassId}({weenieTarget.WeeniePropertiesString.FirstOrDefault(i => i.Type == (int)PropertyString.Name)?.Value}) @ landblock 0x{pos.Landblock:X4}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Replacing entries of encounter {weenieSource.ClassId}({weenieSource.WeeniePropertiesString.FirstOrDefault(i => i.Type == (int)PropertyString.Name)?.Value}) for {weenieTarget.ClassId}({weenieTarget.WeeniePropertiesString.FirstOrDefault(i => i.Type == (int)PropertyString.Name)?.Value}) @ landblock 0x{pos.LandblockId.Landblock:X4}", ChatMessageType.Broadcast));
 
             SyncEncounters(session, landblock, encounters);
             DeveloperCommands.HandleReloadLandblocks(session);
@@ -2066,7 +2279,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 return;
             }
 
-            var landblock = (ushort)pos.Landblock;
+            var landblock = (ushort)pos.LandblockId.Landblock;
 
             // clear any cached encounters for this landblock so we get the unmodified entries
             DatabaseManager.World.ClearCachedEncountersByLandblock(landblock);
@@ -2083,7 +2296,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 }
             }
 
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Replacing entries of encounter {weenieSource.ClassId}({weenieSource.WeeniePropertiesString.FirstOrDefault(i => i.Type == (int)PropertyString.Name)?.Value}) for {weenieTarget.ClassId}({weenieTarget.WeeniePropertiesString.FirstOrDefault(i => i.Type == (int)PropertyString.Name)?.Value}) @ landblock 0x{pos.Landblock:X4}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Replacing entries of encounter {weenieSource.ClassId}({weenieSource.WeeniePropertiesString.FirstOrDefault(i => i.Type == (int)PropertyString.Name)?.Value}) for {weenieTarget.ClassId}({weenieTarget.WeeniePropertiesString.FirstOrDefault(i => i.Type == (int)PropertyString.Name)?.Value}) @ landblock 0x{pos.LandblockId.Landblock:X4}", ChatMessageType.Broadcast));
 
             SyncEncounters(session, landblock, encounters);
             DeveloperCommands.HandleReloadLandblocks(session);
@@ -2095,6 +2308,11 @@ namespace ACE.Server.Command.Handlers.Processors
         [CommandHandler("addenc", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Spawns a new wcid or classname in the current outdoor cell as an encounter", "<wcid or classname>")]
         public static void HandleAddEncounter(Session session, params string[] parameters)
         {
+            // Not supported in AC Realms
+            return;
+
+            /*
+             
             var param = parameters[0];
 
             Weenie weenie = null;
@@ -2155,6 +2373,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
             // write encounters to sql file / load into db
             SyncEncounters(session, landblock, encounters);
+            */
         }
 
         public static WorldObject SpawnEncounter(Weenie weenie, int cellX, int cellY, Position pos, Session session)
@@ -2183,9 +2402,9 @@ namespace ACE.Server.Command.Handlers.Processors
 
             newPos.Frame.Origin.Z = session.Player.CurrentLandblock.PhysicsLandblock.GetZ(newPos.Frame.Origin);
 
-            wo.Location = new Position(newPos.ObjCellID, newPos.Frame.Origin, newPos.Frame.Orientation);
+            wo.Location = new Position(newPos.ObjCellID, newPos.Frame.Origin, newPos.Frame.Orientation, session.Player.Location.Instance);
 
-            var sortCell = Physics.Common.LScape.get_landcell(newPos.ObjCellID) as Physics.Common.SortCell;
+            var sortCell = Physics.Common.LScape.get_landcell(newPos.ObjCellID, pos.Instance) as Physics.Common.SortCell;
             if (sortCell != null && sortCell.has_building())
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"Failed to create encounter near building cell", ChatMessageType.Broadcast));
@@ -2293,7 +2512,7 @@ namespace ACE.Server.Command.Handlers.Processors
             var cellX = (int)Math.Floor(obj.Location.PositionX / Physics.Common.LandDefs.CellLength);
             var cellY = (int)Math.Floor(obj.Location.PositionY / Physics.Common.LandDefs.CellLength);
 
-            var landblock = (ushort)obj.Location.Landblock;
+            var landblock = (ushort)obj.Location.LandblockShort;
 
             // clear any cached encounters for this landblock so we get the unmodified entries
             DatabaseManager.World.ClearCachedEncountersByLandblock(landblock);
@@ -2310,7 +2529,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 return;
             }
 
-            session.Network.EnqueueSend(new GameMessageSystemChat($"Removing encounter @ landblock {obj.Location.Landblock:X4}, cellX={cellX}, cellY={cellY}\n{obj.WeenieClassId} - {obj.Name}", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Removing encounter @ landblock {obj.Location.InstancedLandblock:X4}, cellX={cellX}, cellY={cellY}\n{obj.WeenieClassId} - {obj.Name}", ChatMessageType.Broadcast));
 
             encounters.Remove(encounter);
 
@@ -2521,7 +2740,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 return;
             }
 
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblockId);
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblockId, 0);
             if (instances == null)
             {
                 CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find landblock {landblockId:X4}");
@@ -2664,6 +2883,10 @@ namespace ACE.Server.Command.Handlers.Processors
                 case FileType.Encounter:
                     ExportSQLEncounter(session, param);
                     break;
+
+                case FileType.Realm:
+                    ExportSQLRealm(session, param);
+                    break;
             }
         }
 
@@ -2672,7 +2895,7 @@ namespace ACE.Server.Command.Handlers.Processors
         {
             for (ushort landblockId = 0x0000; landblockId < 0xFFFF; landblockId++)
             {
-                var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblockId);
+                var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblockId, session.Player.RealmRuleset.Realm.Id);
                 if(instances != null && instances.Count > 0)
                     ExportSQLLandblock(session, landblockId.ToString("x4"));
             }
@@ -2683,7 +2906,7 @@ namespace ACE.Server.Command.Handlers.Processors
         {
             for (ushort landblockId = 0x0000; landblockId < 0xFFFF; landblockId++)
             {
-                var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblockId);
+                var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblockId, 0);
                 if (instances != null && instances.Count > 0)
                     ExportSQLEncounter(session, landblockId.ToString("x4"));
             }
@@ -2849,6 +3072,61 @@ namespace ACE.Server.Command.Handlers.Processors
             CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_folder}{sql_filename}");
         }
 
+        public static void ExportSQLRealm(Session session, string param)
+        {
+            DirectoryInfo di = VerifyContentFolder(session, false);
+
+            var sep = Path.DirectorySeparatorChar;
+
+            if (!uint.TryParse(param, out var realmId))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"{param} not a valid realm id");
+                return;
+            }
+
+            var realm = DatabaseManager.World.GetRealm(realmId);
+            if (realm == null)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find realm id {realmId}");
+                return;
+            }
+
+            var sql_folder = $"{di.FullName}{sep}sql{sep}realms{sep}";
+
+            di = new DirectoryInfo(sql_folder);
+
+            if (!di.Exists)
+                di.Create();
+
+            if (RealmSQLWriter == null)
+            {
+                RealmSQLWriter = new RealmSQLWriter();
+            }
+
+            var sql_filename = RealmSQLWriter.GetDefaultFileName(realm);
+
+            try
+            {
+                var sqlFile = new StreamWriter(sql_folder + sql_filename);
+
+                RealmSQLWriter.CreateSQLDELETEStatement(realm, sqlFile);
+                sqlFile.WriteLine();
+
+                RealmSQLWriter.CreateSQLINSERTStatement(realm, sqlFile);
+                sqlFile.WriteLine();
+
+                sqlFile.Close();
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+                CommandHandlerHelper.WriteOutputInfo(session, $"Failed to export {sql_folder}{sql_filename}");
+                return;
+            }
+
+            CommandHandlerHelper.WriteOutputInfo(session, $"Exported {sql_folder}{sql_filename}");
+        }
+
         public static void ExportSQLLandblock(Session session, string param)
         {
             DirectoryInfo di = VerifyContentFolder(session, false);
@@ -2861,7 +3139,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 return;
             }
 
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblockId);
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblockId, 0);
             if (instances == null)
             {
                 CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find landblock {landblockId:X4}");
@@ -3080,6 +3358,8 @@ namespace ACE.Server.Command.Handlers.Processors
                     mode = CacheType.Spell;
                 if (parameters[0].Contains("weenie", StringComparison.OrdinalIgnoreCase))
                     mode = CacheType.Weenie;
+                if (parameters[0].Contains("realm", StringComparison.OrdinalIgnoreCase))
+                    mode = CacheType.Realm;
                 if (parameters[0].Contains("wield", StringComparison.OrdinalIgnoreCase))
                     mode = CacheType.WieldedTreasure;
                 if (parameters[0].Contains("death", StringComparison.OrdinalIgnoreCase))
@@ -3113,8 +3393,15 @@ namespace ACE.Server.Command.Handlers.Processors
                 DatabaseManager.World.ClearWeenieCache();
             }
 
+            if (mode.HasFlag(CacheType.Realm))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, " Clearing realm cache");
+                DatabaseManager.World.ClearRealmCache();
+            }
+
             if (mode.HasFlag(CacheType.WieldedTreasure))
             {
+               
                 CommandHandlerHelper.WriteOutputInfo(session, "Clearing wielded treasure cache");
                 DatabaseManager.World.ClearWieldedTreasureCache();
             }
@@ -3143,6 +3430,7 @@ namespace ACE.Server.Command.Handlers.Processors
             WieldedTreasure = 0x10,
             DeathTreasure   = 0x01,
             Encounter       = 0x02,
+            Realm           = 0x16,
             All             = 0xFFFF
         };
 
@@ -3201,6 +3489,8 @@ namespace ACE.Server.Command.Handlers.Processors
                         return FileType.Spell;
                     else if (line.Contains("`weenie`"))
                         return FileType.Weenie;
+                    else if (line.Contains("`realm`"))
+                        return FileType.Realm;
                     else
                         break;
                 }
@@ -3299,7 +3589,7 @@ namespace ACE.Server.Command.Handlers.Processors
             var landblock_id = (ushort)(objGuid >> 12);
 
             // get instances for landblock
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock_id);
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock_id, 0);
 
             // find instance
             var instance = instances.FirstOrDefault(i => i.Guid == objGuid);
@@ -3325,7 +3615,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 var newLoc = new Position(session.Player.Location);
 
                 // slide?
-                var setPos = new Physics.Common.SetPosition(newLoc.PhysPosition(), Physics.Common.SetPositionFlags.Teleport /* | Physics.Common.SetPositionFlags.Slide */);
+                var setPos = new Physics.Common.SetPosition(newLoc.PhysPosition(), Physics.Common.SetPositionFlags.Teleport /* | Physics.Common.SetPositionFlags.Slide */, newLoc.Instance);
                 var result = obj.PhysicsObj.SetPosition(setPos);
 
                 if (result != Physics.Common.SetPositionError.OK)
@@ -3347,10 +3637,10 @@ namespace ACE.Server.Command.Handlers.Processors
                 {
                     //session.Network.EnqueueSend(new GameMessageSystemChat($"Moving {obj.Name} ({obj.Guid}) to home position: {obj.Location} to {instance.ObjCellId:X8} [{instance.OriginX} {instance.OriginY} {instance.OriginZ}]", ChatMessageType.Broadcast));
 
-                    var homePos = new Position(instance.ObjCellId, instance.OriginX, instance.OriginY, instance.OriginZ, instance.AnglesX, instance.AnglesY, instance.AnglesZ, instance.AnglesW);
+                    var homePos = new Position(instance.ObjCellId, instance.OriginX, instance.OriginY, instance.OriginZ, instance.AnglesX, instance.AnglesY, instance.AnglesZ, instance.AnglesW, obj.Location.Instance);
 
                     // slide?
-                    var setPos = new Physics.Common.SetPosition(homePos.PhysPosition(), Physics.Common.SetPositionFlags.Teleport /* | Physics.Common.SetPositionFlags.Slide*/);
+                    var setPos = new Physics.Common.SetPosition(homePos.PhysPosition(), Physics.Common.SetPositionFlags.Teleport /* | Physics.Common.SetPositionFlags.Slide*/, homePos.Instance);
                     var result = obj.PhysicsObj.SetPosition(setPos);
 
                     if (result != Physics.Common.SetPositionError.OK)
@@ -3366,7 +3656,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
                 var transit = obj.PhysicsObj.transition(obj.PhysicsObj.Position, newPos, true);
 
-                var errorMsg = $"{obj.Name} ({obj.Guid}) failed to move from {obj.PhysicsObj.Position.ACEPosition()} to {newPos.ACEPosition()}";
+                var errorMsg = $"{obj.Name} ({obj.Guid}) failed to move from {obj.PhysicsObj.Position.ACEPosition(obj.Location.Instance)} to {newPos.ACEPosition(obj.Location.Instance)}";
 
                 if (transit == null)
                 {
@@ -3386,9 +3676,9 @@ namespace ACE.Server.Command.Handlers.Processors
 
             // update ace location
             var prevLoc = new Position(obj.Location);
-            obj.Location = obj.PhysicsObj.Position.ACEPosition();
+            obj.Location = obj.PhysicsObj.Position.ACEPosition(obj.Location.Instance);
 
-            if (prevLoc.Landblock != obj.Location.Landblock)
+            if (prevLoc.InstancedLandblock != obj.Location.InstancedLandblock)
                 LandblockManager.RelocateObjectForPhysics(obj, true);
 
             // broadcast new position
@@ -3530,7 +3820,7 @@ namespace ACE.Server.Command.Handlers.Processors
             var landblock_id = (ushort)(obj.Guid.Full >> 12);
 
             // get instances for landblock
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock_id);
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock_id, obj.Location.RealmID);
 
             // find instance
             var instance = instances.FirstOrDefault(i => i.Guid == obj.Guid.Full);
@@ -3635,7 +3925,7 @@ namespace ACE.Server.Command.Handlers.Processors
             var landblock_id = (ushort)(obj.Guid.Full >> 12);
 
             // get instances for landblock
-            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock_id);
+            var instances = DatabaseManager.World.GetCachedInstancesByLandblock(landblock_id, 0);
 
             // find instance
             var instance = instances.FirstOrDefault(i => i.Guid == obj.Guid.Full);
@@ -3793,7 +4083,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
                     try
                     {
-                        var pos = new Position(new Vector2(x, y));
+                        var pos = new Position(new Vector2(x, y), 0);
                         pos.AdjustMapCoords();
                         pos.Translate(objCellId);
                         pos.FindZ();
@@ -3834,7 +4124,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 return;
             }
 
-            var obj = WorldObjectFactory.CreateNewWorldObject(weenie);
+            var obj = WorldObjectFactory.CreateNewWorldObject(weenie, session.Player.RealmRuleset);
 
             Creature creature = obj as Creature;
 
@@ -4452,13 +4742,13 @@ namespace ACE.Server.Command.Handlers.Processors
             var instance = DatabaseManager.World.GetLandblockInstancesByWcid(nameSourceWcid).FirstOrDefault();
             if (instance != null)
             {
-                var pos = new Position(instance.ObjCellId, instance.OriginX, instance.OriginY, instance.OriginZ, instance.AnglesX, instance.AnglesY, instance.AnglesZ, instance.AnglesW);
-                var landblock = ACE.Server.Physics.Common.LScape.get_landblock(pos.Landblock << 16);
-                if (!landblock.IsDungeon && (pos.Landblock & 0x000000FF) < 0xFA && ((pos.Landblock & 0x0000FF00) >> 8) > 0x02)
+                var pos = new Position(instance.ObjCellId, instance.OriginX, instance.OriginY, instance.OriginZ, instance.AnglesX, instance.AnglesY, instance.AnglesZ, instance.AnglesW, 0);
+                var landblock = ACE.Server.Physics.Common.LScape.get_landblock((uint)pos.LandblockId.Landblock << 16, pos.Instance);
+                if (!landblock.IsDungeon && ((uint)pos.LandblockId.Landblock & 0x000000FF) < 0xFA && (((uint)pos.LandblockId.Landblock & 0x0000FF00) >> 8) > 0x02)
                     directions = $"at {pos.GetMapCoordStr(true)}";
                 else
                 {
-                    var name = LandblockInstanceWriter.GetNameFromPortalDestination(pos.Landblock, out var newNameSourceWcid);
+                    var name = LandblockInstanceWriter.GetNameFromPortalDestination(pos.LandblockId.Landblock, out var newNameSourceWcid);
                     if (RecursedList.Contains(newNameSourceWcid))
                         return "";
                     else
@@ -4498,7 +4788,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 for (ushort landblockIdY = 0x00; landblockIdY < 0xFF; landblockIdY++)
                 {
                     ushort landblockId = (ushort)(landblockIdX << 8 | landblockIdY);
-                    var landblockInstances = DatabaseManager.World.GetCachedInstancesByLandblock(landblockId);
+                    var landblockInstances = DatabaseManager.World.GetCachedInstancesByLandblock(landblockId, session.Player.RealmRuleset.Realm.Id);
                     var name = LandblockInstanceWriter.GetNameFromPortalDestination(landblockId, out var nameSourceWcid);
                     var minLevel = int.MaxValue;
                     var maxLevel = 0;
@@ -4644,7 +4934,7 @@ namespace ACE.Server.Command.Handlers.Processors
                 {
                     ushort landblockId = (ushort)(landblockIdX << 8 | landblockIdY);
                     var name = LandblockInstanceWriter.GetNameFromPortalDestination(landblockId, out var nameSourceWcid);
-                    var landblock = LandblockManager.GetLandblock(new LandblockId(landblockIdX, landblockIdY), false, false);
+                    var landblock = LandblockManager.GetLandblock(new LandblockId(landblockIdX, landblockIdY), session.Player.Location.Instance, null, false, false);
                     var isDungeon = landblock.IsDungeon;
                     var hasDungeon = landblock.HasDungeon;
 
@@ -5127,7 +5417,7 @@ namespace ACE.Server.Command.Handlers.Processors
 
                 foreach(var instance in instances)
                 {
-                    var landblockInstances = DatabaseManager.World.GetCachedInstancesByLandblock((ushort)instance.Landblock.Value);
+                    var landblockInstances = DatabaseManager.World.GetCachedInstancesByLandblock((ushort)instance.Landblock.Value, session.Player.RealmRuleset.Realm.Id);
 
                     Dictionary<int, int> creatureLootTiersCount = new Dictionary<int, int>();
                     foreach (var landblockEntry in landblockInstances)

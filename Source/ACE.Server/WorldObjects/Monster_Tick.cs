@@ -93,7 +93,7 @@ namespace ACE.Server.WorldObjects
                 if (IsAnimating)
                 {
                     //PhysicsObj.ShowPendingMotions();
-                    PhysicsObj.update_object();
+                    PhysicsObj.update_object(Location.Instance);
                     return;
                 }
 
