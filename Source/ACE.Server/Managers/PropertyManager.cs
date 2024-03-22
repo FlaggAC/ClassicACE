@@ -675,21 +675,24 @@ namespace ACE.Server.Managers
                 ("block_vpn_connections", new Property<bool>(false, "enable this to block user sessions from IPs identified as VPN proxies")),
                 ("increase_minimum_encounter_spawn_density", new Property<bool>(false, "enable this to increase the density of random encounters that spawn in low density landblocks")),
                 ("command_who_enabled", new Property<bool>(true, "disable this to prevent players from listing online players in their allegiance")),
+
                 ("enforce_player_movement", new Property<bool>(false, "enable this to enforce server side verification of player movement")),
                 ("enforce_player_movement_speed", new Property<bool>(false, "enable this to enforce server side verification of player movement speed")),
                 ("enforce_player_movement_kick", new Property<bool>(false, "enable this to kick players that fail movement verification too frenquently")),
+                ("fall_damage_enabled", new Property<bool>(true, "Toggles whether fall damage is enabled")),
+
                 ("useable_gems", new Property<bool>(true, "Allows loot generated gems to be used to cast their spells")),
                 ("allow_PKs_to_go_NPK", new Property<bool>(true, "Allows PKs to go back to being NPKs by using the appropriate altar")),
                 ("show_discord_chat_ingame", new Property<bool>(false, "Display messages posted to Discord in general chat")),
-                ("allow_multiple_accounts_hc", new Property<bool>(false, "Toggles whether multiple accounts are allowed in Hardcore mode")),
-
                 ("assess_creature_pve_always_succeed", new Property<bool>(false, "enable this to bypass assess creature PvE skill checks (workaround to fix 5 second delay on vtank looting which occurs due to failed assess)")),
-                ("relive_bonus_applies_to_received_fellow_xp", new Property<bool>(true, "Toggles whether incoming xp received from fellowship members benefits from the relive bonus.")),
 
-                ("fall_damage_enabled", new Property<bool>(true, "Toggles whether fall damage is enabled")),
+                ("allow_multiple_accounts_hc", new Property<bool>(false, "Toggles whether multiple accounts are allowed in Hardcore mode")),
+                ("relive_bonus_applies_to_received_fellow_xp", new Property<bool>(true, "Toggles whether incoming xp received from fellowship members benefits from the relive bonus.")),
+                ("dekaru_hc_keep_non_equippable_bonded_on_death", new Property<bool>(true, "Toggles whether bonded items are kept on a hardcore death despite being non-equippable")),
                 ("dekaru_dual_wield_speed_mod", new Property<bool>(true, "Toggles whether Dekaru's dual wield speed changes (other than for dagger) are enabled")),
-                ("dekaru_hc_keep_non_equippable_bonded_on_death", new Property<bool>(true, "Toggles whether bonded items are kept on a hardcore death despite being non-equippable"))
-                
+
+                ("pve_allow_life_projectile_crit", new Property<bool>(true, "Toggles whether life bolts can crit in PvE"))
+
                 );
 
         public static readonly ReadOnlyDictionary<string, Property<long>> DefaultLongProperties =
