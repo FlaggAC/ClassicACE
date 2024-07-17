@@ -635,17 +635,22 @@ namespace ACE.Server.WorldObjects
             {
                 lifeMagicDamage = LifeProjectileDamage * Spell.DamageRatio;
 
-                if (!isPvP || Common.ConfigManager.Config.Server.WorldRuleset != Common.Ruleset.CustomDM)
+                if (!isPvP)
                 {
-                    // could life magic projectiles crit?
-                    // if so, did they use the same 1.5x formula as war magic, instead of 2.0x?
+                    // For lack of other evidence, ACE team (Opti, gmriggs, Scribble, Crimson, fatboi, Immortal Bob)
+                    // concluded on Discord 2018 July 4/5 that all projectile spells could crit in PvE, including Void/Life.
+                    // They found no evidence direct cast (prots, harm, drains, etc.) could crit.
+                    // They went with a default bonus of 50% to correspond to War.
                     if (criticalHit)
                     {
-                        // verify: CriticalMultiplier only applied to the additional crit damage,
-                        // whereas CD/CDR applied to the total damage (base damage + additional crit damage)
-                        weaponCritDamageMod = GetWeaponCritDamageMod(weapon, sourceCreature, attackSkill, target, isPvP);
-
-                        critDamageBonus = lifeMagicDamage * 0.5f * weaponCritDamageMod;
+                        bool lifeCrits = PropertyManager.GetBool("pve_allow_life_projectile_crit", true, true).Item;
+                        if (lifeCrits)
+                        {
+                            // verify: CriticalMultiplier only applied to the additional crit damage,
+                            // whereas CD/CDR applied to the total damage (base damage + additional crit damage)
+                            weaponCritDamageMod = GetWeaponCritDamageMod(weapon, sourceCreature, attackSkill, target, isPvP);
+                            critDamageBonus = lifeMagicDamage * 0.5f * weaponCritDamageMod;
+                        }
                     }
                 }
 
